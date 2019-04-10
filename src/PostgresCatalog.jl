@@ -10,12 +10,19 @@ mutable struct PGType
         new(name, lbls)
 end
 
+mutable struct PGColumn
+    name::String
+    typ::PGType
+    nn::Bool
+end
+
 mutable struct PGTable
     name::String
     comment::Union{String,Missing}
+    cols::Vector{PGColumn}
 
     PGTable(name) =
-        new(name, missing)
+        new(name, missing, PGColumn[])
 end
 
 mutable struct PGSchema
@@ -71,6 +78,15 @@ end
 add_table(name) =
     scm -> add_table(scm, name)
 
+function add_column(tbl, name, typ, nn)
+    col = PGColumn(name, typ, nn)
+    push!(tbl.cols, col)
+    col
+end
+
+add_column(name, typ, nn) =
+    tbl -> add_column(tbl, name, typ, nn)
+
 function introspect(conn)
     cat = PGCatalog()
 
@@ -118,17 +134,34 @@ function introspect(conn)
 
     # Extract tables.
     oid2table = Dict{UInt32,PGTable}()
-    result = execute(conn, """
+    res = execute(conn, """
         SELECT c.oid, c.relnamespace, c.relname
         FROM pg_catalog.pg_class c
         WHERE c.relkind IN ('r', 'v') AND
               HAS_TABLE_PRIVILEGE(c.oid, 'SELECT')
         ORDER BY c.relnamespace, c.relname
     """)
-    foreach(zip(fetch!(NamedTuple, result)...)) do (oid, relnamespace, relname)
+    foreach(zip(fetch!(NamedTuple, res)...)) do (oid, relnamespace, relname)
         scm = oid2schema[relnamespace]
         tbl = scm |> add_table(relname)
         oid2table[oid] = tbl
+    end
+
+    # Extract columns.
+    oidnum2column = Dict{Tuple{UInt32,Int16},PGColumn}()
+    res = execute(conn, """
+        SELECT a.attrelid, a.attnum, a.attname, a.atttypid, a.attnotnull
+        FROM pg_catalog.pg_attribute a
+        WHERE a.attnum > 0 AND
+              NOT a.attisdropped
+        ORDER BY a.attrelid, a.attnum
+    """)
+    foreach(zip(fetch!(NamedTuple, res)...)) do (attrelid, attnum, attname, atttypid, attnotnull)
+        attrelid in keys(oid2table) || return
+        tbl = oid2table[attrelid]
+        typ = oid2type[atttypid]
+        col = tbl |> add_column(attname, typ, attnotnull)
+        oidnum2column[(attrelid, attnum)] = col
     end
 
     cat
