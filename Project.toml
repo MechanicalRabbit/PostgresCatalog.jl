@@ -1,0 +1,7 @@
+name = "PostgresCatalog"
+uuid = "972fa324-5b21-11e9-38b2-934e41d705ec"
+authors = ["Kirill Simonov <xi@resolvent.net>"]
+version = "0.1.0"
+
+[deps]
+LibPQ = "194296ae-ab2e-5f79-8cd4-7183a0a5a0d1"
