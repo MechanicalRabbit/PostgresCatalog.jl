@@ -13,7 +13,7 @@ function introspect(conn)
         ORDER BY n.nspname
     """)
     foreach(zip(fetch!(NamedTuple, res)...)) do (oid, nspname)
-        scm = add_schema(cat, nspname)
+        scm = add_schema!(cat, nspname)
         oid2schema[oid] = scm
     end
 
@@ -40,9 +40,9 @@ function introspect(conn)
         scm = oid2schema[typnamespace]
         typ =
             if typtype == "e"
-                add_type(scm, typname, oid2labels[oid])
+                add_type!(scm, typname, oid2labels[oid])
             else
-                add_type(scm, typname)
+                add_type!(scm, typname)
             end
         oid2type[oid] = typ
     end
@@ -58,7 +58,7 @@ function introspect(conn)
     """)
     foreach(zip(fetch!(NamedTuple, res)...)) do (oid, relnamespace, relname)
         scm = oid2schema[relnamespace]
-        tbl = add_table(scm, relname)
+        tbl = add_table!(scm, relname)
         oid2table[oid] = tbl
     end
 
@@ -75,7 +75,7 @@ function introspect(conn)
         attrelid in keys(oid2table) || return
         tbl = oid2table[attrelid]
         typ = oid2type[atttypid]
-        col = add_column(tbl, attname, typ, attnotnull)
+        col = add_column!(tbl, attname, typ, attnotnull)
         oidnum2column[(attrelid, attnum)] = col
     end
 

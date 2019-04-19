@@ -2,366 +2,376 @@
 # Catalog structure.
 #
 
-# Data containers.
+# Entity containers.
 
-mutable struct PGSchemaData
-    name::String
-    typ_map::Dict{String,UInt32}
-    tbl_map::Dict{String,UInt32}
+mutable struct PGCatalog_{PGSchema}
+    scm_map::Dict{String,PGSchema}
 
-    alive::Bool
-
-    PGSchemaData(name) =
-        new(name, Dict{String,UInt32}(), Dict{String,UInt32}(), true)
+    PGCatalog_{PGSchema}() where {PGSchema} =
+        new(Dict{String,PGSchema}())
 end
 
-mutable struct PGTypeData
-    scm_ref::UInt32
+mutable struct PGSchema_{PGType,PGTable}
+    linked::Bool
+
+    cat::PGCatalog_{PGSchema_{PGType,PGTable}}
     name::String
-    lbls::Vector{String}
-    col_set::Set{UInt32}
 
-    alive::Bool
+    typ_map::Dict{String,PGType}
+    tbl_map::Dict{String,PGTable}
 
-    PGTypeData(scm_ref, name, lbls=String[]) =
-        new(scm_ref, name, lbls, Set{UInt32}(), true)
+    PGSchema_{PGType,PGTable}(cat, name) where {PGType,PGTable} =
+        new(false, cat, name, Dict{String,PGType}(), Dict{String,PGTable}())
 end
 
-mutable struct PGTableData
-    scm_ref::UInt32
+mutable struct PGType_{PGTable,PGColumn}
+    linked::Bool
+
+    scm::PGSchema_{PGType_{PGTable,PGColumn},PGTable}
     name::String
-    col_seq::Vector{UInt32}
-    col_map::Dict{String,UInt32}
+    lbls::Union{Vector{String},Nothing}
 
-    alive::Bool
+    col_set::Set{PGColumn}
 
-    PGTableData(scm_ref, name) =
-        new(scm_ref, name, UInt32[], Dict{String,UInt32}(), true)
+    PGType_{PGTable,PGColumn}(scm, name, lbls=nothing) where {PGTable,PGColumn} =
+        new(false, scm, name, lbls, Set{PGColumn}())
 end
 
-mutable struct PGColumnData
-    tbl_ref::UInt32
+mutable struct PGTable_{PGColumn}
+    linked::Bool
+
+    scm::PGSchema_{PGType_{PGTable_{PGColumn},PGColumn},PGTable_{PGColumn}}
     name::String
-    typ_ref::UInt32
+
+    col_map::Dict{String,PGColumn}
+    col_seq::Vector{PGColumn}
+
+    PGTable_{PGColumn}(scm, name) where {PGColumn} =
+        new(false, scm, name, Dict{String,PGColumn}(), PGColumn[])
+end
+
+mutable struct PGColumn_
+    linked::Bool
+
+    tbl::PGTable_{PGColumn_}
+    name::String
+    typ::PGType_{PGTable_{PGColumn_},PGColumn_}
     not_null::Bool
 
-    alive::Bool
-
-    PGColumnData(tbl_ref, name, typ_ref, not_null=true) =
-        new(tbl_ref, name, typ_ref, not_null, true)
+    PGColumn_(tbl, name, typ, not_null) =
+        new(false, tbl, name, typ, not_null)
 end
 
-# Root container.
+const PGColumn = PGColumn_
 
-mutable struct PGCatalog
-    scm_map::Dict{String,UInt32}
+const PGTable = PGTable_{PGColumn}
 
-    next_ref::UInt32
+const PGType = PGType_{PGTable,PGColumn}
 
-    scm_idx::Dict{UInt32,PGSchemaData}
-    typ_idx::Dict{UInt32,PGTypeData}
-    tbl_idx::Dict{UInt32,PGTableData}
-    col_idx::Dict{UInt32,PGColumnData}
+const PGSchema = PGSchema_{PGType,PGTable}
 
-    PGCatalog() =
-        new(Dict{String,UInt32}(),
-            1,
-            Dict{UInt32,PGSchemaData}(),
-            Dict{UInt32,PGTypeData}(),
-            Dict{UInt32,PGTableData}(),
-            Dict{UInt32,PGColumnData}())
-end
+const PGCatalog = PGCatalog_{PGSchema}
 
-# Entity wrapper.
+Base.show_datatype(io::IO, ::Type{PGColumn}) = print(io, :PGColumn)
 
-struct PGEntity{T}
-    cat::PGCatalog
-    ref::UInt32
-    data::T
-end
+Base.show_datatype(io::IO, ::Type{PGTable}) = print(io, :PGTable)
 
-const PGSchema = PGEntity{PGSchemaData}
+Base.show_datatype(io::IO, ::Type{PGType}) = print(io, :PGType)
 
-const PGType = PGEntity{PGTypeData}
+Base.show_datatype(io::IO, ::Type{PGSchema}) = print(io, :PGSchema)
 
-const PGTable = PGEntity{PGTableData}
-
-const PGColumn = PGEntity{PGColumnData}
-
-get_catalog(ety::PGEntity) =
-    ety.cat
-
-function get_catalog(ety1::PGEntity, ety2::PGEntity, etys::PGEntity...)
-    @assert ety1.cat === ety2.cat
-    get_catalog(ety2, etys...)
-end
+Base.show_datatype(io::IO, ::Type{PGCatalog}) = print(io, :PGCatalog)
 
 # Catalog operations.
 
 Base.show(io::IO, cat::PGCatalog) =
     print(io, "<DATABASE>")
 
-_entity_index(cat::PGCatalog, ::Type{PGSchemaData}) =
-    cat.scm_idx
-
-_entity_index(cat::PGCatalog, ::Type{PGTypeData}) =
-    cat.typ_idx
-
-_entity_index(cat::PGCatalog, ::Type{PGTableData}) =
-    cat.tbl_idx
-
-_entity_index(cat::PGCatalog, ::Type{PGColumnData}) =
-    cat.col_idx
-
-_entity_index(cat::PGCatalog, ::Type{PGEntity{T}}) where {T} =
-    _entity_index(cat, T)
-
-_entity_index(cat::PGCatalog, data::T) where {T} =
-    _entity_index(cat, T)
-
-get_entity(cat::PGCatalog, T::Type, ref::UInt32) =
-    PGEntity(cat, ref, _entity_index(cat, T)[ref])
-
-function add_entity(cat::PGCatalog, data)
-    ref = cat.next_ref
-    cat.next_ref += 1
-    _entity_index(cat, data)[ref] = data
-    return PGEntity(cat, ref, data)
-end
-
-function add_schema(cat::PGCatalog, name::AbstractString)
-    @assert !(name in keys(cat.scm_map))
-    data = PGSchemaData(name)
-    scm = add_entity(cat, data)
-    cat.scm_map[data.name] = scm.ref
-    return scm
-end
-
-function get_schema(cat::PGCatalog, name::AbstractString)
-    @assert name in keys(cat.scm_map)
-    ref = cat.scm_map[name]
-    return get_entity(cat, PGSchema, ref)
-end
-
 Base.getindex(cat::PGCatalog, name::AbstractString) =
     get_schema(cat, name)
 
+Base.iterate(cat::PGCatalog, state...) =
+    iterate(list_schemas(cat), state...)
+
+get_schema(cat::PGCatalog, name::AbstractString) =
+    cat.scm_map[name]
+
 get_schema(cat::PGCatalog, name::AbstractString, default) =
-    name in keys(cat.scm_map) ? get_schema(cat, name) : default
+    get(cat.scm_map, name, default)
 
 list_schemas(cat::PGCatalog) =
-    (get_schema(cat, name) for name in keys(cat.scm_map))
+    values(cat.scm_map)
+
+function add_schema!(cat::PGCatalog, name::AbstractString)
+    @assert !(name in keys(cat.scm_map))
+    scm = PGSchema(cat, name)
+    link!(scm)
+    scm
+end
 
 # Schema operations.
 
 Base.show(io::IO, scm::PGSchema) =
-    scm.data.alive ?
-        print(io, "<SCHEMA $(sql_name(scm.data.name))>") :
-        print(io, "<DROPPED SCHEMA>")
+    print(io, "<$(!scm.linked ? "DROPPED " : "")SCHEMA $(sql_name(scm.name))>")
 
-function set_name(scm::PGSchema, name::AbstractString)
-    @assert scm.data.alive
-    cat = get_catalog(scm)
-    @assert !(name in keys(cat.scm_map))
-    delete!(cat.scm_map, scm.data.name)
-    scm.data.name = name
-    cat.scm_map[scm.data.name] = scm.ref
-    return scm
+Base.getindex(scm::PGSchema, name::AbstractString) =
+    get_table(scm, name)
+
+Base.iterate(scm::PGSchema, state...) =
+    iterate(list_tables(scm), state...)
+
+function link!(scm::PGSchema)
+    @assert !scm.linked
+    scm.cat.scm_map[scm.name] = scm
+    scm.linked = true
+    scm
 end
 
-function get_name(scm::PGSchema)
-    @assert scm.data.alive
-    return scm.data.name
+function unlink!(scm::PGSchema)
+    @assert scm.linked
+    delete!(scm.cat.scm_map, scm.name)
+    scm.linked = false
+    scm
+end
+
+function remove!(scm::PGSchema)
+    @assert scm.linked
+    for tbl in list_tables(scm)
+        remove!(tbl)
+    end
+    for typ in list_types(scm)
+        remove!(typ)
+    end
+    unlink!(scm)
+    scm.cat
+end
+
+get_catalog(scm::PGSchema) =
+    scm.cat
+
+get_name(scm::PGSchema) =
+    scm.name
+
+function set_name!(scm::PGSchema, name::AbstractString)
+    @assert scm.linked
+    name != scm.name || return scm
+    @assert !(name in keys(scm.cat.scm_map))
+    unlink!(scm)
+    scm.name = name
+    link!(scm)
+    scm
 end
 
 get_fullname(scm::PGSchema) =
     (get_name(scm),)
 
-function add_type(scm::PGSchema, name::AbstractString, lbls::AbstractVector{<:AbstractString}=String[])
-    @assert scm.data.alive
-    @assert !(name in keys(scm.data.typ_map))
-    cat = get_catalog(scm)
-    data = PGTypeData(scm.ref, name, lbls)
-    typ = add_entity(cat, data)
-    scm.data.typ_map[typ.data.name] = typ.ref
-    return typ
+get_type(scm::PGSchema, name::AbstractString) =
+    scm.typ_map[name]
+
+get_type(scm::PGSchema, name::AbstractString, default) =
+    get(scm.typ_map, name, default)
+
+list_types(scm::PGSchema) =
+    values(scm.typ_map)
+
+function add_type!(scm::PGSchema, name::AbstractString, lbls::Union{AbstractVector{<:AbstractString},Nothing}=nothing)
+    @assert scm.linked
+    @assert !(name in keys(scm.typ_map))
+    typ = PGType(scm, name, lbls)
+    link!(typ)
+    typ
 end
 
-function get_type(scm::PGSchema, name::AbstractString)
-    @assert scm.data.alive
-    @assert name in keys(scm.data.typ_map)
-    ref = scm.data.typ_map[name]
-    cat = get_catalog(scm)
-    return get_entity(cat, PGType, ref)
-end
+get_table(scm::PGSchema, name::AbstractString) =
+    scm.tbl_map[name]
 
-function get_type(scm::PGSchema, name::AbstractString, default)
-    @assert scm.data.alive
-    return name in keys(scm.data.typ_map) ? get_type(scm, name) : default
-end
+get_table(scm::PGSchema, name::AbstractString, default) =
+    get(scm.tbl_map, name, default)
 
-function list_types(scm::PGSchema)
-    @assert scm.data.alive
-    return (get_type(scm, name) for name in keys(scm.data.typ_map))
-end
+list_tables(scm::PGSchema) =
+    values(scm.tbl_map)
 
-function add_table(scm::PGSchema, name::AbstractString)
-    @assert scm.data.alive
-    @assert !(name in keys(scm.data.tbl_map))
-    cat = get_catalog(scm)
-    data = PGTableData(scm.ref, name)
-    tbl = add_entity(cat, data)
-    scm.data.tbl_map[tbl.data.name] = tbl.ref
-    return tbl
-end
-
-function get_table(scm::PGSchema, name::AbstractString)
-    @assert scm.data.alive
-    @assert name in keys(scm.data.tbl_map)
-    ref = scm.data.tbl_map[name]
-    cat = get_catalog(scm)
-    return get_entity(cat, PGTable, ref)
-end
-
-Base.getindex(scm::PGSchema, name::AbstractString) =
-    get_table(scm, name)
-
-function get_table(scm::PGSchema, name::AbstractString, default)
-    @assert scm.data.alive
-    return name in keys(scm.data.tbl_map) ? get_table(scm, name) : default
-end
-
-function list_tables(scm::PGSchema)
-    @assert scm.data.alive
-    return (get_table(scm, name) for name in keys(scm.data.tbl_map))
+function add_table!(scm::PGSchema, name::AbstractString)
+    @assert scm.linked
+    @assert !(name in keys(scm.tbl_map))
+    tbl = PGTable(scm, name)
+    link!(tbl)
+    tbl
 end
 
 # Type operations.
 
 Base.show(io::IO, typ::PGType) =
-    typ.data.alive ?
-        print(io, "<TYPE $(sql_name(get_fullname(typ)))>") :
-        print(io, "<DROPPED TYPE>")
+    print(io, "<$(!typ.linked ? "DROPPED " : "")TYPE $(sql_name(get_fullname(typ)))>")
 
-function get_schema(typ::PGType)
-    @assert typ.data.alive
-    cat = get_catalog(typ)
-    return get_entity(cat, PGSchema, typ.data.scm_ref)
+function link!(typ::PGType)
+    @assert !typ.linked
+    typ.scm.typ_map[typ.name] = typ
+    typ.linked = true
+    typ
 end
+
+function unlink!(typ::PGType)
+    @assert typ.linked
+    delete!(typ.scm.typ_map, typ.name)
+    typ.linked = false
+    typ
+end
+
+function remove!(typ::PGType)
+    @assert typ.linked
+    for col in list_columns(typ)
+        remove!(col)
+    end
+    unlink!(typ)
+    typ.scm
+end
+
+get_schema(typ::PGType) =
+    typ.scm
+
+get_name(typ::PGType) =
+    typ.name
 
 function set_name(typ::PGType, name::AbstractString)
-    @assert typ.data.alive
-    cat = get_catalog(typ)
-    scm = get_entity(cat, PGSchema, typ.data.scm_ref)
-    @assert !(name in keys(scm.typ_map))
-    delete!(scm.typ_map, typ.data.name)
-    typ.data.name = name
-    scm.typ_map[typ.data.name] = typ.ref
-    return typ
-end
-
-function get_name(typ::PGType)
-    @assert typ.data.alive
-    return typ.data.name
+    @assert typ.linked
+    name != typ.name || return typ
+    @assert !(name in keys(typ.scm.typ_map))
+    unlink!(typ)
+    typ.name = name
+    link!(typ)
+    typ
 end
 
 get_fullname(typ::PGType) =
     (get_fullname(get_schema(typ))..., get_name(typ))
 
+get_labels(typ::PGType) =
+    typ.lbls
+
 # Table operations.
 
 Base.show(io::IO, tbl::PGTable) =
-    tbl.data.alive ?
-        print(io, "<TABLE $(sql_name(get_fullname(tbl)))>") :
-        print(io, "<DROPPED TABLE>")
+    print(io, "<$(!tbl.linked ? "DROPPED " : "")TABLE $(sql_name(get_fullname(tbl)))>")
 
-function get_schema(tbl::PGTable)
-    @assert tbl.data.alive
-    cat = get_catalog(tbl)
-    return get_entity(cat, PGSchema, tbl.data.scm_ref)
+Base.getindex(tbl::PGTable, name::AbstractString) =
+    get_column(tbl, name)
+
+Base.iterate(tbl::PGTable, state...) =
+    iterate(list_columns(tbl), state...)
+
+function link!(tbl::PGTable)
+    @assert !tbl.linked
+    tbl.scm.tbl_map[tbl.name] = tbl
+    tbl.linked = true
+    tbl
 end
 
-function set_name(tbl::PGTable, name::AbstractString)
-    @assert tbl.data.alive
-    cat = get_catalog(tbl)
-    scm = get_entity(cat, PGSchema, tbl.data.scm_ref)
-    @assert !(name in keys(scm.tbl_map))
-    delete!(scm.tbl_map, tbl.data.name)
-    tbl.data.name = name
-    scm.tbl_map[tbl.data.name] = tbl.ref
-    return tbl
+function unlink!(tbl::PGTable)
+    @assert tbl.linked
+    delete!(typ.scm.tbl_map, tbl.name)
+    tbl.linked = false
+    tbl
 end
 
-function get_name(tbl::PGTable)
-    @assert tbl.data.alive
-    return tbl.data.name
+function remove!(tbl::PGTable)
+    @assert tbl.linked
+    for col in list_columns(tbl)
+        remove!(col)
+    end
+    unlink!(tbl)
+    tbl.scm
+end
+
+get_schema(tbl::PGTable) =
+    tbl.scm
+
+get_name(tbl::PGTable) =
+    tbl.name
+
+function set_name!(tbl::PGTable, name::AbstractString)
+    @assert tbl.linked
+    name != tbl.name || return tbl
+    @assert !(name in keys(tbl.scm.tbl_map))
+    unlink!(tbl)
+    tbl.name = name
+    link!(tbl)
+    tbl
 end
 
 get_fullname(tbl::PGTable) =
     (get_fullname(get_schema(tbl))..., get_name(tbl))
 
-function add_column(tbl::PGTable, name::AbstractString, typ::PGType, not_null::Bool)
-    @assert tbl.data.alive && typ.data.alive
-    @assert !(name in keys(tbl.data.col_map))
-    cat = get_catalog(tbl, typ)
-    data = PGColumnData(tbl.ref, name, typ.ref, not_null)
-    col = add_entity(cat, data)
-    tbl.data.col_map[col.data.name] = col.ref
-    push!(tbl.data.col_seq, col.ref)
-    push!(typ.data.col_set, col.ref)
-    return col
-end
+get_column(tbl::PGTable, name::AbstractString) =
+    tbl.col_map[name]
 
-function get_column(tbl::PGTable, name::AbstractString)
-    @assert tbl.data.alive
-    @assert name in keys(tbl.data.col_map)
-    ref = tbl.data.col_map[name]
-    cat = get_catalog(tbl)
-    return get_entity(cat, PGColumn, ref)
-end
+get_column(tbl::PGTable, name::AbstractString, default) =
+    get(tbl.col_map, name, default)
 
-Base.getindex(tbl::PGTable, name::AbstractString) =
-    get_column(tbl, name)
+list_columns(tbl::PGTable) =
+    values(tbl.col_map)
 
-function get_column(tbl::PGTable, name::AbstractString, default)
-    @assert tbl.data.alive
-    return name in keys(tbl.data.col_map) ? get_column(scm, name) : default
-end
-
-function list_columns(tbl::PGTable)
-    @assert tbl.data.alive
-    return (get_entity(tbl.cat, PGColumn, ref) for ref in tbl.data.col_seq)
+function add_column!(tbl::PGTable, name::AbstractString, typ::PGType, not_null::Bool)
+    @assert tbl.linked
+    @assert typ.linked
+    @assert tbl.scm.cat === typ.scm.cat
+    @assert !(name in keys(tbl.col_map))
+    col = PGColumn(tbl, name, typ, not_null)
+    link!(col)
+    col
 end
 
 # Column operations.
 
 Base.show(io::IO, col::PGColumn) =
-    col.data.alive ?
-        print(io, "<COLUMN $(sql_name(get_fullname(col))) $(sql_name(get_fullname(get_type(col)))) $(col.data.not_null ? "NOT NULL" : "NULL")>") :
-        print(io, "<DROPPED COLUMN>")
+    print(io, "<$(!col.linked ? "DROPPED " : "")COLUMN $(sql_name(get_fullname(col))) $(sql_name(get_fullname(col.typ))) $(col.not_null ? "NOT " : "")NULL>")
 
-function get_table(col::PGColumn)
-    @assert col.data.alive
-    cat = get_catalog(col)
-    return get_entity(cat, PGTable, col.data.tbl_ref)
+function link!(col::PGColumn)
+    @assert !col.linked
+    col.tbl.col_map[col.name] = col
+    push!(col.tbl.col_seq, col)
+    push!(col.typ.col_set, col)
+    col.linked = true
+    col
 end
 
-function get_name(col::PGColumn)
-    @assert col.data.alive
-    return col.data.name
+function unlink!(col::PGColumn)
+    @assert col.linked
+    delete!(col.tbl.col_map, col.name)
+    filter!(!=(col), col.tbl.col_seq)
+    delete!(col.typ.col_set)
+    col.linked = false
+    col
+end
+
+function remove!(col::PGColumn)
+    @assert col.linked
+    unlink!(col)
+    col.tbl
+end
+
+get_table(col::PGColumn) =
+    col.tbl
+
+get_name(col::PGColumn) =
+    col.name
+
+function set_name!(col::PGColumn, name::AbstractString)
+    @assert col.linked
+    name != col.name || return col
+    @assert !(name in keys(col.tbl.col_map))
+    unlink!(col)
+    col.name = name
+    link!(col)
+    col
 end
 
 get_fullname(col::PGColumn) =
     (get_fullname(get_table(col))..., get_name(col))
 
-function get_type(col::PGColumn)
-    @assert col.data.alive
-    cat = get_catalog(col)
-    return get_entity(cat, PGType, col.data.typ_ref)
-end
+get_type(col::PGColumn) =
+    col.typ
 
-function get_not_null(col::PGColumn)
-    @assert col.data.alive
-    return col.data.not_null
-end
+get_not_null(col::PGColumn) =
+    col.not_null
 
