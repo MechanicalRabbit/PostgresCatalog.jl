@@ -4,83 +4,67 @@
 
 # Entity containers.
 
-mutable struct PGCatalog_{PGSchema}
+@rectypes begin
+
+mutable struct PGCatalog
     scm_map::Dict{String,PGSchema}
 
-    PGCatalog_{PGSchema}() where {PGSchema} =
+    PGCatalog() =
         new(Dict{String,PGSchema}())
 end
 
-mutable struct PGSchema_{PGType,PGTable}
+mutable struct PGSchema
     linked::Bool
 
-    cat::PGCatalog_{PGSchema_{PGType,PGTable}}
+    cat::PGCatalog
     name::String
 
     typ_map::Dict{String,PGType}
     tbl_map::Dict{String,PGTable}
 
-    PGSchema_{PGType,PGTable}(cat, name) where {PGType,PGTable} =
+    PGSchema(cat, name) =
         new(false, cat, name, Dict{String,PGType}(), Dict{String,PGTable}())
 end
 
-mutable struct PGType_{PGTable,PGColumn}
+mutable struct PGType
     linked::Bool
 
-    scm::PGSchema_{PGType_{PGTable,PGColumn},PGTable}
+    scm::PGSchema
     name::String
     lbls::Union{Vector{String},Nothing}
 
     col_set::Set{PGColumn}
 
-    PGType_{PGTable,PGColumn}(scm, name, lbls=nothing) where {PGTable,PGColumn} =
+    PGType(scm, name, lbls=nothing) =
         new(false, scm, name, lbls, Set{PGColumn}())
 end
 
-mutable struct PGTable_{PGColumn}
+mutable struct PGTable
     linked::Bool
 
-    scm::PGSchema_{PGType_{PGTable_{PGColumn},PGColumn},PGTable_{PGColumn}}
+    scm::PGSchema
     name::String
 
     col_map::Dict{String,PGColumn}
     col_seq::Vector{PGColumn}
 
-    PGTable_{PGColumn}(scm, name) where {PGColumn} =
+    PGTable(scm, name) =
         new(false, scm, name, Dict{String,PGColumn}(), PGColumn[])
 end
 
-mutable struct PGColumn_
+mutable struct PGColumn
     linked::Bool
 
-    tbl::PGTable_{PGColumn_}
+    tbl::PGTable
     name::String
-    typ::PGType_{PGTable_{PGColumn_},PGColumn_}
+    typ::PGType
     not_null::Bool
 
-    PGColumn_(tbl, name, typ, not_null) =
+    PGColumn(tbl, name, typ, not_null) =
         new(false, tbl, name, typ, not_null)
 end
 
-const PGColumn = PGColumn_
-
-const PGTable = PGTable_{PGColumn}
-
-const PGType = PGType_{PGTable,PGColumn}
-
-const PGSchema = PGSchema_{PGType,PGTable}
-
-const PGCatalog = PGCatalog_{PGSchema}
-
-Base.show_datatype(io::IO, ::Type{PGColumn}) = print(io, :PGColumn)
-
-Base.show_datatype(io::IO, ::Type{PGTable}) = print(io, :PGTable)
-
-Base.show_datatype(io::IO, ::Type{PGType}) = print(io, :PGType)
-
-Base.show_datatype(io::IO, ::Type{PGSchema}) = print(io, :PGSchema)
-
-Base.show_datatype(io::IO, ::Type{PGCatalog}) = print(io, :PGCatalog)
+end
 
 # Catalog operations.
 
