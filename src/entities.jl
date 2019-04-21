@@ -20,10 +20,16 @@ mutable struct PGSchema
     name::String
 
     typ_map::Dict{String,PGType}
+    proc_map::Dict{Tuple{String,Vector{PGType}},PGProcedure}
     tbl_map::Dict{String,PGTable}
+    seq_map::Dict{String,PGSequence}
 
     PGSchema(cat, name) =
-        new(false, cat, name, Dict{String,PGType}(), Dict{String,PGTable}())
+        new(false, cat, name,
+            Dict{String,PGType}(),
+            Dict{Tuple{String,Vector{PGType}},PGProcedure}(),
+            Dict{String,PGTable}(),
+            Dict{String,PGSequence}())
 end
 
 mutable struct PGType
@@ -33,10 +39,23 @@ mutable struct PGType
     name::String
     lbls::Union{Vector{String},Nothing}
 
-    col_set::Set{PGColumn}
+    dep_set::Set{Union{PGColumn,PGProcedure}}
 
     PGType(scm, name, lbls=nothing) =
-        new(false, scm, name, lbls, Set{PGColumn}())
+        new(false, scm, name, lbls, Set{Union{PGColumn,PGProcedure}}())
+end
+
+mutable struct PGProcedure
+    linked::Bool
+
+    scm::PGSchema
+    name::String
+    typs::Vector{PGType}
+    ret_typ::PGType
+    src::String
+
+    PGProcedure(scm, name, typs, ret_typ, src) =
+        new(false, scm, name, typs, ret_typ, src)
 end
 
 mutable struct PGTable
@@ -59,9 +78,20 @@ mutable struct PGColumn
     name::String
     typ::PGType
     not_null::Bool
+    default::Union{String,Nothing}
 
     PGColumn(tbl, name, typ, not_null) =
-        new(false, tbl, name, typ, not_null)
+        new(false, tbl, name, typ, not_null, nothing)
+end
+
+mutable struct PGSequence
+    linked::Bool
+
+    scm::PGSchema
+    name::String
+
+    PGSequence(scm, name) =
+        new(false, scm, name)
 end
 
 end
@@ -166,6 +196,17 @@ function add_type!(scm::PGSchema, name::AbstractString, lbls::Union{AbstractVect
     typ
 end
 
+list_procedures(scm::PGSchema) =
+    values(scm.proc_map)
+
+function add_procedure!(scm::PGSchema, name::AbstractString, typs::Vector{PGType}, ret_typ::PGType, src::AbstractString)
+    @assert scm.linked
+    @assert !((name, typs) in keys(scm.proc_map))
+    proc = PGProcedure(scm, name, typs, ret_typ, src)
+    link!(proc)
+    proc
+end
+
 get_table(scm::PGSchema, name::AbstractString) =
     scm.tbl_map[name]
 
@@ -181,6 +222,23 @@ function add_table!(scm::PGSchema, name::AbstractString)
     tbl = PGTable(scm, name)
     link!(tbl)
     tbl
+end
+
+get_sequence(scm::PGSchema, name::AbstractString) =
+    scm.seq_map[name]
+
+get_sequence(scm::PGSchema, name::AbstractString, default) =
+    get(scm.seq_map, name, default)
+
+list_sequences(scm::PGSchema) =
+    values(scm.seq_map)
+
+function add_sequence!(scm::PGSchema, name::AbstractString)
+    @assert scm.linked
+    @assert !(name in keys(scm.seq_map))
+    seq = PGSequence(scm, name)
+    link!(seq)
+    seq
 end
 
 # Type operations.
@@ -232,6 +290,67 @@ get_fullname(typ::PGType) =
 
 get_labels(typ::PGType) =
     typ.lbls
+
+# Operations on stored procedures.
+
+Base.show(io::IO, proc::PGProcedure) =
+    print(io, "<$(!proc.linked ? "DROPPED " : "")PROCEDURE $(sql_name(get_fullname(proc)))($(sql_name(get_fullname.(proc.typs))))>")
+
+function link!(proc::PGProcedure)
+    @assert !proc.linked
+    proc.scm.proc_map[(proc.name, proc.typs)] = proc
+    for typ in proc.typs
+        push!(typ.dep_set, proc)
+    end
+    push!(proc.ret_typ.dep_set, proc)
+    proc.linked = true
+    proc
+end
+
+function unlink!(proc::PGProcedure)
+    @assert proc.linked
+    delete!(proc.ret_typ.dep_set, proc)
+    for typ in proc.typs
+        delete!(typ.dep_set, proc)
+    end
+    delete!(proc.scm.proc_map, proc.name)
+    proc.linked = false
+    proc
+end
+
+function remove!(proc::PGProcedure)
+    @assert proc.linked
+    unlink!(proc)
+    proc.scm
+end
+
+get_schema(proc::PGProcedure) =
+    proc.scm
+
+get_name(proc::PGProcedure) =
+    proc.name
+
+function set_name!(proc::PGProcedure, name::AbstractString)
+    @assert proc.linked
+    name != proc.name || return tbl
+    @assert !(name in keys(tbl.scm.tbl_map))
+    unlink!(tbl)
+    tbl.name = name
+    link!(tbl)
+    tbl
+end
+
+get_fullname(proc::PGProcedure) =
+    (get_fullname(get_schema(proc))..., get_name(proc))
+
+get_types(proc::PGProcedure) =
+    proc.typs
+
+get_return_type(proc::PGProcedure) =
+    proc.ret_typ
+
+get_source(proc::PGProcedure) =
+    proc.src
 
 # Table operations.
 
@@ -314,7 +433,7 @@ function link!(col::PGColumn)
     @assert !col.linked
     col.tbl.col_map[col.name] = col
     push!(col.tbl.col_seq, col)
-    push!(col.typ.col_set, col)
+    push!(col.typ.dep_set, col)
     col.linked = true
     col
 end
@@ -323,7 +442,7 @@ function unlink!(col::PGColumn)
     @assert col.linked
     delete!(col.tbl.col_map, col.name)
     filter!(!=(col), col.tbl.col_seq)
-    delete!(col.typ.col_set)
+    delete!(col.typ.dep_set, col)
     col.linked = false
     col
 end
@@ -358,4 +477,63 @@ get_type(col::PGColumn) =
 
 get_not_null(col::PGColumn) =
     col.not_null
+
+function set_not_null!(col::PGColumn, not_null::Bool)
+    @assert col.linked
+    col.not_null = not_null
+    col
+end
+
+get_default(col::PGColumn) =
+    col.default
+
+function set_default!(col::PGColumn, default::Union{AbstractString,Nothing})
+    @assert col.linked
+    col.default = default
+    col
+end
+
+# Operations on sequences.
+
+Base.show(io::IO, seq::PGSequence) =
+    print(io, "<$(!seq.linked ? "DROPPED " : "")SEQUENCE $(sql_name(get_fullname(seq)))>")
+
+function link!(seq::PGSequence)
+    @assert !seq.linked
+    seq.scm.seq_map[seq.name] = seq
+    seq.linked = true
+    seq
+end
+
+function unlink!(seq::PGSequence)
+    @assert seq.linked
+    delete!(seq.scm.seq_map, seq.name)
+    seq.linked = false
+    seq
+end
+
+function remove!(seq::PGSequence)
+    @assert seq.linked
+    unlink!(seq)
+    seq.scm
+end
+
+get_schema(seq::PGSequence) =
+    seq.scm
+
+get_name(seq::PGSequence) =
+    seq.name
+
+function set_name!(seq::PGSequence, name::AbstractString)
+    @assert seq.linked
+    name != seq.name || return tbl
+    @assert !(name in keys(seq.scm.seq_map))
+    unlink!(seq)
+    seq.name = name
+    link!(seq)
+    seq
+end
+
+get_fullname(seq::PGSequence) =
+    (get_fullname(get_schema(seq))..., get_name(seq))
 

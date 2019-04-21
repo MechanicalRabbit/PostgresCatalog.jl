@@ -47,6 +47,21 @@ function introspect(conn)
         oid2type[oid] = typ
     end
 
+    # Extract stored procedures.
+    oid2procedure = Dict{UInt32,PGProcedure}()
+    res = execute(conn, """
+        SELECT p.oid, p.pronamespace, p.proname, p.proargtypes, p.prorettype, p.prosrc
+        FROM pg_catalog.pg_proc p
+        ORDER BY p.pronamespace, p.proname
+    """)
+    foreach(zip(fetch!(NamedTuple, res)...)) do (oid, pronamespace, proname, proargtypes, prorettype, prosrc)
+        scm = oid2schema[pronamespace]
+        typs = getindex.(Ref(oid2type), parse.(UInt32, split(proargtypes)))
+        ret_typ = oid2type[prorettype]
+        proc = add_procedure!(scm, proname, typs, ret_typ, prosrc)
+        oid2procedure[oid] = proc
+    end
+
     # Extract tables.
     oid2table = Dict{UInt32,PGTable}()
     res = execute(conn, """
@@ -77,6 +92,32 @@ function introspect(conn)
         typ = oid2type[atttypid]
         col = add_column!(tbl, attname, typ, attnotnull)
         oidnum2column[(attrelid, attnum)] = col
+    end
+
+    # Extract default values.
+    res = execute(conn, """
+        SELECT a.adrelid, a.adnum, pg_get_expr(a.adbin, a.adrelid)
+        FROM pg_catalog.pg_attrdef a
+        ORDER BY a.adrelid, a.adnum
+    """)
+    foreach(zip(fetch!(NamedTuple, res)...)) do (adrelid, adnum, adsrc)
+        (adrelid, adnum) in keys(oidnum2column) || return
+        col = oidnum2column[(adrelid, adnum)]
+        set_default!(col, adsrc)
+    end
+
+    # Extract sequences.
+    oid2sequence = Dict{UInt32,PGSequence}()
+    res = execute(conn, """
+        SELECT c.oid, c.relnamespace, c.relname
+        FROM pg_catalog.pg_class c
+        WHERE c.relkind = 'S'
+        ORDER BY c.relnamespace, c.relname
+    """)
+    foreach(zip(fetch!(NamedTuple, res)...)) do (oid, relnamespace, relname)
+        scm = oid2schema[relnamespace]
+        seq = add_sequence!(scm, relname)
+        oid2sequence[oid] = seq
     end
 
     cat

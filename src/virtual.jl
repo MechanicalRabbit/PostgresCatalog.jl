@@ -20,10 +20,14 @@
         (name, default...) -> get_type(scm, name, default...)
     elseif prop === :types
         () -> list_types(scm)
+    elseif prop === :procedures
+        () -> list_procedures(scm)
     elseif prop === :table
         (name, default...) -> get_table(scm, name, default...)
     elseif prop === :tables
         () -> list_tables(scm)
+    elseif prop === :sequences
+        () -> list_sequences(scm)
     else
         getfield(scm, prop)
     end
@@ -39,6 +43,19 @@
         () -> list_columns(typ)
     else
         getfield(typ, prop)
+    end
+
+@inline Base.getproperty(proc::PGProcedure, prop::Symbol) =
+    if prop === :schema
+        get_schema(proc)
+    elseif prop === :fullname
+        get_fullname(proc)
+    elseif prop === :types
+        get_types(proc)
+    elseif prop == :return_type
+        get_return_type(proc)
+    else
+        getfield(proc, prop)
     end
 
 @inline Base.getproperty(tbl::PGTable, prop::Symbol) =
@@ -61,5 +78,14 @@
         get_type(col)
     else
         getfield(col, prop)
+    end
+
+@inline Base.getproperty(seq::PGSequence, prop::Symbol) =
+    if prop === :schema
+        get_schema(seq)
+    elseif prop === :fullname
+        get_fullname(seq)
+    else
+        getfield(seq, prop)
     end
 
