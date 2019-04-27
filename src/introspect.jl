@@ -47,21 +47,6 @@ function introspect(conn)
         oid2type[oid] = typ
     end
 
-    # Extract stored procedures.
-    oid2procedure = Dict{UInt32,PGProcedure}()
-    res = execute(conn, """
-        SELECT p.oid, p.pronamespace, p.proname, p.proargtypes, p.prorettype, p.prosrc
-        FROM pg_catalog.pg_proc p
-        ORDER BY p.pronamespace, p.proname
-    """)
-    foreach(zip(fetch!(NamedTuple, res)...)) do (oid, pronamespace, proname, proargtypes, prorettype, prosrc)
-        scm = oid2schema[pronamespace]
-        typs = getindex.(Ref(oid2type), parse.(UInt32, split(proargtypes)))
-        ret_typ = oid2type[prorettype]
-        proc = add_procedure!(scm, proname, typs, ret_typ, prosrc)
-        oid2procedure[oid] = proc
-    end
-
     # Extract tables.
     oid2table = Dict{UInt32,PGTable}()
     res = execute(conn, """
@@ -118,6 +103,132 @@ function introspect(conn)
         scm = oid2schema[relnamespace]
         seq = add_sequence!(scm, relname)
         oid2sequence[oid] = seq
+    end
+
+    # Extract sequence owners.
+    res = execute(conn, """
+        SELECT d.objid, d.refobjid, d.refobjsubid
+        FROM pg_catalog.pg_depend d JOIN
+             pg_catalog.pg_class c ON (d.classid = 'pg_class'::regclass AND d.objid = c.oid)
+        WHERE c.relkind = 'S' AND
+              d.refclassid = 'pg_class'::regclass AND
+              d.objsubid IS NOT NULL
+        ORDER BY d.objid, d.refobjid, d.objsubid
+    """)
+    foreach(zip(fetch!(NamedTuple, res)...)) do (objid, refobjid, refobjsubid)
+        seq = oid2sequence[objid]
+        col = oidnum2column[(refobjid, refobjsubid)]
+        set_column!(seq, col)
+    end
+
+    # Extract indexes.
+    res = execute(conn, """
+        SELECT c.oid, c.relnamespace, c.relname, i.indrelid, i.indkey
+        FROM pg_catalog.pg_class c JOIN
+             pg_catalog.pg_index i ON (c.oid = i.indexrelid)
+        WHERE c.relkind = 'i'
+        ORDER BY c.relnamespace, c.relname
+    """)
+    foreach(zip(fetch!(NamedTuple, res)...)) do (oid, relnamespace, relname, indrelid, indkey)
+        indrelid in keys(oid2table) || return
+        scm = oid2schema[relnamespace]
+        tbl = oid2table[indrelid]
+        cols = PGColumn[]
+        for num in parse.(Int16, split(indkey))
+            num > 0 || return
+            push!(cols, oidnum2column[(indrelid, num)])
+        end
+        add_index!(scm, relname, tbl, cols)
+    end
+
+    # Extract unique keys.
+    oid2unique_key = Dict{UInt32,PGUniqueKey}()
+    res = execute(conn, """
+        SELECT c.oid, c.conname, c.contype, c.conrelid, c.conkey
+        FROM pg_catalog.pg_constraint c
+        WHERE c.contype IN ('p', 'u')
+        ORDER BY c.oid
+    """)
+    foreach(zip(fetch!(NamedTuple, res)...)) do (oid, conname, contype, conrelid, conkey)
+        conrelid in keys(oid2table) || return
+        tbl = oid2table[conrelid]
+        cols = PGColumn[]
+        for num in conkey
+            num > 0 || return
+            push!(cols, oidnum2column[(conrelid, num)])
+        end
+        primary = contype == 'p'
+        uk = add_unique_key!(tbl, conname, cols, primary)
+        oid2unique_key[oid] = uk
+    end
+
+    # Extract foreign keys.
+    oid2foreign_key = Dict{UInt32,PGForeignKey}()
+    res = execute(conn, """
+        SELECT c.oid, c.conname, c.conrelid, c.conkey, c.confrelid, c.confkey,
+               c.confdeltype, c.confupdtype
+        FROM pg_catalog.pg_constraint c
+        WHERE c.contype = 'f'
+        ORDER BY c.oid
+    """)
+    foreach(zip(fetch!(NamedTuple, res)...)) do (oid, conname, conrelid, conkey, confrelid, confkey,
+                                                 confdeltype, confupdtype)
+        conrelid in keys(oid2table) || return
+        tbl = oid2table[conrelid]
+        cols = PGColumn[]
+        for num in conkey
+            num > 0 || return
+            push!(cols, oidnum2column[(conrelid, num)])
+        end
+        confrelid in keys(oid2table) || return
+        ttbl = oid2table[confrelid]
+        tcols = PGColumn[]
+        for num in confkey
+            num > 0 || return
+            push!(tcols, oidnum2column[(confrelid, num)])
+        end
+        on_delete = confdeltype == 'a' ? "NO ACTION" :
+                    confdeltype == 'r' ? "RESTRICT" :
+                    confdeltype == 'c' ? "CASCADE" :
+                    confdeltype == 'n' ? "SET NULL" :
+                    confdeltype == 'd' ? "SET DEFAULT" : ""
+        on_update = confupdtype == 'a' ? "NO ACTION" :
+                    confupdtype == 'r' ? "RESTRICT" :
+                    confupdtype == 'c' ? "CASCADE" :
+                    confupdtype == 'n' ? "SET NULL" :
+                    confupdtype == 'd' ? "SET DEFAULT" : ""
+        fk = add_foreign_key!(tbl, conname, cols, ttbl, tcols, on_delete, on_update)
+        oid2foreign_key[oid] = fk
+    end
+
+    # Extract stored procedures.
+    oid2procedure = Dict{UInt32,PGProcedure}()
+    res = execute(conn, """
+        SELECT p.oid, p.pronamespace, p.proname, p.proargtypes, p.prorettype, p.prosrc
+        FROM pg_catalog.pg_proc p
+        ORDER BY p.pronamespace, p.proname
+    """)
+    foreach(zip(fetch!(NamedTuple, res)...)) do (oid, pronamespace, proname, proargtypes, prorettype, prosrc)
+        scm = oid2schema[pronamespace]
+        typs = getindex.(Ref(oid2type), parse.(UInt32, split(proargtypes)))
+        ret_typ = oid2type[prorettype]
+        proc = add_procedure!(scm, proname, typs, ret_typ, prosrc)
+        oid2procedure[oid] = proc
+    end
+
+    # Extract triggers.
+    oid2trigger = Dict{UInt32,PGTrigger}()
+    res = execute(conn, """
+        SELECT t.oid, t.tgrelid, t.tgname, t.tgfoid
+        FROM pg_catalog.pg_trigger t
+        WHERE NOT t.tgisinternal
+        ORDER BY t.tgrelid, t.tgname
+    """)
+    foreach(zip(fetch!(NamedTuple, res)...)) do (oid, tgrelid, tgname, tgfoid)
+        tbl = oid2table[tgrelid]
+        proc = oid2procedure[tgfoid]
+        tg = add_trigger!(tbl, tgname, proc)
+        oid2trigger[oid] = tg
     end
 
     cat

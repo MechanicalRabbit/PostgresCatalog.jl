@@ -41,8 +41,8 @@ mutable struct PGForeignKey
     columns::Vector{PGColumn}
     target_table::PGTable
     target_columns::Vector{PGColumn}
-    on_delete::Symbol
-    on_update::Symbol
+    on_delete::String
+    on_update::String
 
     PGForeignKey(tbl, name, cols, ttbl, tcols, on_delete, on_update) =
         new(false, tbl, name, cols, ttbl, tcols, on_update, on_delete)
@@ -262,14 +262,15 @@ function add_table!(scm::PGSchema, name::AbstractString)
     link!(tbl)
 end
 
-function add_index!(name::AbstractString, tbl::PGTable, cols::Vector{PGColumn})
+function add_index!(scm::PGSchema, name::AbstractString, tbl::PGTable, cols::Vector{PGColumn})
+    @assert scm.linked
     @assert tbl.linked
+    @assert tbl.schema === scm
     @assert length(cols) > 0
     for col in cols
-        @assert cols.linked
-        @assert cols.table === tbl
+        @assert col.linked
+        @assert col.table === tbl
     end
-    scm = tbl.schema
     idx = PGIndex(scm, name, tbl, cols)
     link!(idx)
 end
@@ -407,14 +408,17 @@ function add_unique_key!(tbl::PGTable, name::AbstractString, cols::Vector{PGColu
     link!(uk)
 end
 
-function add_foreign_key!(tbl::PGTable, name::AbstractString, cols::Vector{PGColumn}, ttbl::PGTable, tcols::Vector{PGColumn}, on_delete::Symbol=:no_action, on_update::Symbol=:no_action)
+function add_foreign_key!(tbl::PGTable, name::AbstractString, cols::Vector{PGColumn}, ttbl::PGTable, tcols::Vector{PGColumn},
+                          on_delete::String="NO ACTION", on_update::String="NO ACTION")
     @assert tbl.linked
+    @assert length(cols) > 0
     for col in cols
         @assert col.linked
         @assert col.table === tbl
     end
     @assert ttbl.linked
     @assert tbl.schema.catalog === ttbl.schema.catalog
+    @assert length(tcols) == length(cols)
     for tcol in tcols
         @assert tcol.linked
         @assert tcol.table === ttbl
@@ -504,7 +508,7 @@ end
 
 function unlink!(seq::PGSequence)
     @assert seq.linked
-    if seql.column !== nothing
+    if seq.column !== nothing
         delete!(seq.column.sequences, seq)
     end
     delete!(seq.schema.sequences, seq.name)
@@ -546,7 +550,7 @@ Base.show(io::IO, idx::PGIndex) =
 
 function link!(idx::PGIndex)
     @assert !idx.linked
-    @assert !(idx.name in idx.schema.indexes)
+    @assert !(idx.name in keys(idx.schema.indexes))
     idx.schema.indexes[idx.name] = idx
     push!(idx.table.indexes, idx)
     for col in idx.columns
@@ -590,7 +594,7 @@ Base.show(io::IO, uk::PGUniqueKey) =
 
 function link!(uk::PGUniqueKey)
     @assert !uk.linked
-    @assert !(uk.name in uk.table.unique_keys)
+    @assert !(uk.name in keys(uk.table.unique_keys))
     uk.table.unique_keys[uk.name] = uk
     if uk.primary
         @assert uk.table.primary_key === nothing
@@ -639,7 +643,7 @@ print(io, "<$(!fk.linked ? "DROPPED " : "")FOREIGN KEY $(sql_name(get_fullname(f
 
 function link!(fk::PGForeignKey)
     @assert !fk.linked
-    @assert !(fk.name in fk.table.foreign_keys)
+    @assert !(fk.name in keys(fk.table.foreign_keys))
     fk.table.foreign_keys[fk.name] = fk
     for col in fk.columns
         push!(col.foreign_keys, fk)
@@ -734,7 +738,7 @@ Base.show(io::IO, tg::PGTrigger) =
 
 function link!(tg::PGTrigger)
     @assert !tg.linked
-    @assert !(tg.name in tg.table.triggers)
+    @assert !(tg.name in keys(tg.table.triggers))
     tg.table.triggers[tg.name] = tg
     push!(tg.procedure.triggers, tg)
     tg.linked = true
