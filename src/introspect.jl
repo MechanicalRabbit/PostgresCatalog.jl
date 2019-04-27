@@ -116,6 +116,7 @@ function introspect(conn)
         ORDER BY d.objid, d.refobjid, d.objsubid
     """)
     foreach(zip(fetch!(NamedTuple, res)...)) do (objid, refobjid, refobjsubid)
+        (refobjid, refobjsubid) in keys(oidnum2column) || return
         seq = oid2sequence[objid]
         col = oidnum2column[(refobjid, refobjsubid)]
         set_column!(seq, col)
@@ -225,10 +226,58 @@ function introspect(conn)
         ORDER BY t.tgrelid, t.tgname
     """)
     foreach(zip(fetch!(NamedTuple, res)...)) do (oid, tgrelid, tgname, tgfoid)
+        tgrelid in keys(oid2table) || return
         tbl = oid2table[tgrelid]
         proc = oid2procedure[tgfoid]
         tg = add_trigger!(tbl, tgname, proc)
         oid2trigger[oid] = tg
+    end
+
+    # Extract comments
+    res = execute(conn, """
+        SELECT c.relname, d.objoid, d.objsubid, d.description
+        FROM pg_catalog.pg_description d JOIN
+             pg_catalog.pg_class c ON (d.classoid = c.oid)
+        WHERE d.classoid IN ('pg_catalog.pg_namespace'::regclass,
+                             'pg_catalog.pg_type'::regclass,
+                             'pg_catalog.pg_class'::regclass,
+                             'pg_catalog.pg_constraint'::regclass,
+                             'pg_catalog.pg_proc'::regclass,
+                             'pg_catalog.pg_trigger'::regclass)
+        ORDER BY d.objoid, d.classoid, d.objsubid
+    """)
+    foreach(zip(fetch!(NamedTuple, res)...)) do (relname, objoid, objsubid, description)
+        if relname == "pg_namespace"
+            scm = oid2schema[objoid]
+            set_comment!(scm, description)
+        elseif relname == "pg_type"
+            typ = oid2type[objoid]
+            set_comment!(typ, description)
+        elseif relname == "pg_class" && (objoid, objsubid) in keys(oidnum2column)
+            col = oidnum2column[(objoid, objsubid)]
+            set_comment!(col, description)
+        elseif relname == "pg_class" && objsubid == 0 && objoid in keys(oid2table)
+            tbl = oid2table[objoid]
+            set_comment!(tbl, description)
+        elseif relname == "pg_class" && objsubid == 0 && objoid in keys(oid2sequence)
+            seq = oid2sequence[objoid]
+            set_comment!(seq, description)
+        elseif relname == "pg_class" && objsubid == 0 && objoid in keys(oid2index)
+            idx = oid2index[objoid]
+            set_comment!(idx, description)
+        elseif relname == "pg_constraint" && objoid in keys(oid2unique_key)
+            uk = oid2unique_key[objoid]
+            set_comment!(uk, description)
+        elseif relname == "pg_constraint" && objoid in keys(oid2foreign_key)
+            fk = oid2foreign_key[objoid]
+            set_comment!(fk, description)
+        elseif relname == "pg_proc"
+            proc = oid2procedure[objoid]
+            set_comment!(proc, description)
+        elseif relname == "pg_trigger" && objoid in keys(oid2trigger)
+            tg = oid2trigger[objoid]
+            set_comment!(tg, description)
+        end
     end
 
     cat

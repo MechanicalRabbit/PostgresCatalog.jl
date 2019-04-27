@@ -12,9 +12,10 @@ mutable struct PGTrigger
     table::PGTable
     name::String
     procedure::PGProcedure
+    comment::Union{String,Nothing}
 
     PGTrigger(tbl, name, proc) =
-        new(false, tbl, name, proc)
+        new(false, tbl, name, proc, nothing)
 end
 
 mutable struct PGProcedure
@@ -25,11 +26,12 @@ mutable struct PGProcedure
     types::Vector{PGType}
     return_type::PGType
     source::String
+    comment::Union{String,Nothing}
 
     triggers::Set{PGTrigger}
 
     PGProcedure(scm, name, typs, ret_typ, src) =
-        new(false, scm, name, typs, ret_typ, src,
+        new(false, scm, name, typs, ret_typ, src, nothing,
             Set{PGTrigger}())
 end
 
@@ -43,9 +45,10 @@ mutable struct PGForeignKey
     target_columns::Vector{PGColumn}
     on_delete::String
     on_update::String
+    comment::Union{String,Nothing}
 
     PGForeignKey(tbl, name, cols, ttbl, tcols, on_delete, on_update) =
-        new(false, tbl, name, cols, ttbl, tcols, on_update, on_delete)
+        new(false, tbl, name, cols, ttbl, tcols, on_update, on_delete, nothing)
 end
 
 mutable struct PGUniqueKey
@@ -55,9 +58,10 @@ mutable struct PGUniqueKey
     name::String
     columns::Vector{PGColumn}
     primary::Bool
+    comment::Union{String,Nothing}
 
     PGUniqueKey(tbl, name, cols, primary) =
-        new(false, tbl, name, cols, primary)
+        new(false, tbl, name, cols, primary, nothing)
 end
 
 mutable struct PGIndex
@@ -67,9 +71,10 @@ mutable struct PGIndex
     name::String
     table::PGTable
     columns::Vector{PGColumn}
+    comment::Union{String,Nothing}
 
     PGIndex(scm, name, tbl, cols) =
-        new(false, scm, name, tbl, cols)
+        new(false, scm, name, tbl, cols, nothing)
 end
 
 mutable struct PGSequence
@@ -78,9 +83,10 @@ mutable struct PGSequence
     schema::PGSchema
     name::String
     column::Union{PGColumn,Nothing}
+    comment::Union{String,Nothing}
 
     PGSequence(scm, name) =
-        new(false, scm, name, nothing)
+        new(false, scm, name, nothing, nothing)
 end
 
 mutable struct PGColumn
@@ -91,6 +97,7 @@ mutable struct PGColumn
     type_::PGType
     not_null::Bool
     default::Union{String,Nothing}
+    comment::Union{String,Nothing}
 
     sequences::Set{PGSequence}
     indexes::Set{PGIndex}
@@ -99,7 +106,7 @@ mutable struct PGColumn
     referring_foreign_keys::Set{PGForeignKey}
 
     PGColumn(tbl, name, typ, not_null) =
-        new(false, tbl, name, typ, not_null, nothing,
+        new(false, tbl, name, typ, not_null, nothing, nothing,
             Set{PGSequence}(),
             Set{PGIndex}(),
             Set{PGUniqueKey}(),
@@ -112,6 +119,7 @@ mutable struct PGTable
 
     schema::PGSchema
     name::String
+    comment::Union{String,Nothing}
 
     columns::Dict{String,PGColumn}
     indexes::Set{PGIndex}
@@ -122,7 +130,7 @@ mutable struct PGTable
     triggers::Dict{String,PGTrigger}
 
     PGTable(scm, name) =
-        new(false, scm, name,
+        new(false, scm, name, nothing,
             Dict{String,PGColumn}(),
             Set{PGIndex}(),
             nothing,
@@ -138,12 +146,13 @@ mutable struct PGType
     schema::PGSchema
     name::String
     labels::Union{Vector{String},Nothing}
+    comment::Union{String,Nothing}
 
     columns::Set{PGColumn}
     procedures::Set{PGProcedure}
 
     PGType(scm, name, lbls=nothing) =
-        new(false, scm, name, lbls,
+        new(false, scm, name, lbls, nothing,
             Set{PGColumn}(),
             Set{PGProcedure}())
 end
@@ -153,6 +162,7 @@ mutable struct PGSchema
 
     catalog::PGCatalog
     name::String
+    comment::Union{String,Nothing}
 
     types::Dict{String,PGType}
     tables::Dict{String,PGTable}
@@ -161,7 +171,7 @@ mutable struct PGSchema
     procedures::Dict{Tuple{String,Vector{PGType}},PGProcedure}
 
     PGSchema(cat, name) =
-        new(false, cat, name,
+        new(false, cat, name, nothing,
             Dict{String,PGType}(),
             Dict{String,PGTable}(),
             Dict{String,PGIndex}(),
@@ -197,8 +207,23 @@ function add_schema!(cat::PGCatalog, name::AbstractString)
     link!(scm)
 end
 
+# Some common operations.
+
 get_name(ety::Union{PGSchema,PGType,PGTable,PGColumn,PGSequence,PGIndex,PGUniqueKey,PGForeignKey,PGProcedure,PGTrigger}) =
     ety.name
+
+function set_name!(ety::Union{PGSchema,PGType,PGTable,PGColumn,PGSequence,PGIndex,PGUniqueKey,PGForeignKey,PGProcedure,PGTrigger}, name::AbstractString)
+    @assert ety.linked
+    unlink!(ety)
+    ety.name = name
+    link!(ety)
+end
+
+function set_comment!(ety::Union{PGSchema,PGType,PGTable,PGColumn,PGSequence,PGIndex,PGUniqueKey,PGForeignKey,PGProcedure,PGTrigger}, comment::Union{AbstractString,Nothing})
+    @assert ety.linked
+    ety.comment = comment
+    ety
+end
 
 # Schema operations.
 
@@ -242,13 +267,6 @@ end
 
 get_fullname(scm::PGSchema) =
     (scm.name,)
-
-function set_name!(scm::PGSchema, name::AbstractString)
-    @assert scm.linked
-    unlink!(scm)
-    scm.name = name
-    link!(scm)
-end
 
 function add_type!(scm::PGSchema, name::AbstractString, lbls::Union{AbstractVector{<:AbstractString},Nothing}=nothing)
     @assert scm.linked
@@ -332,13 +350,6 @@ end
 get_fullname(typ::PGType) =
     (get_fullname(typ.schema)..., typ.name)
 
-function set_name(typ::PGType, name::AbstractString)
-    @assert typ.linked
-    unlink!(typ)
-    typ.name = name
-    link!(typ)
-end
-
 # Table operations.
 
 Base.show(io::IO, tbl::PGTable) =
@@ -382,13 +393,6 @@ end
 
 get_fullname(tbl::PGTable) =
     (get_fullname(tbl.schema)..., tbl.name)
-
-function set_name!(tbl::PGTable, name::AbstractString)
-    @assert tbl.linked
-    unlink!(tbl)
-    tbl.name = name
-    link!(tbl)
-end
 
 function add_column!(tbl::PGTable, name::AbstractString, typ::PGType, not_null::Bool)
     @assert tbl.linked
@@ -462,13 +466,6 @@ end
 get_fullname(col::PGColumn) =
     (get_fullname(col.table)..., col.name)
 
-function set_name!(col::PGColumn, name::AbstractString)
-    @assert col.linked
-    unlink!(col)
-    col.name = name
-    link!(col)
-end
-
 function set_type!(col::PGColumn, typ::PGType)
     @assert col.linked
     @assert typ.linked
@@ -525,13 +522,6 @@ end
 get_fullname(seq::PGSequence) =
     (get_fullname(seq.schema)..., seq.name)
 
-function set_name!(seq::PGSequence, name::AbstractString)
-    @assert seq.linked
-    unlink!(seq)
-    seq.name = name
-    link!(seq)
-end
-
 function set_column!(seq::PGSequence, col::Union{PGColumn,Nothing})
     @assert seq.linked
     if col !== nothing
@@ -580,13 +570,6 @@ end
 get_fullname(idx::PGIndex) =
     (get_fullname(idx.schema)..., idx.name)
 
-function set_name!(idx::PGIndex, name::AbstractString)
-    @assert idx.linked
-    unlink!(idx)
-    idx.name = name
-    link!(idx)
-end
-
 # Operations on unique key constraints.
 
 Base.show(io::IO, uk::PGUniqueKey) =
@@ -628,13 +611,6 @@ end
 
 get_fullname(uk::PGUniqueKey) =
     (get_fullname(uk.table)..., uk.name)
-
-function set_name!(uk::PGUniqueKey, name::AbstractString)
-    @assert uk.linked
-    unlink!(uk)
-    uk.name = name
-    link!(uk)
-end
 
 # Operations on foreign key constraints.
 
@@ -679,13 +655,6 @@ end
 get_fullname(fk::PGForeignKey) =
     (get_fullname(fk.table)..., fk.name)
 
-function set_name!(fk::PGForeignKey, name::AbstractString)
-    @assert fk.linked
-    unlink!(fk)
-    fk.name = name
-    link!(fk)
-end
-
 # Operations on stored procedures.
 
 Base.show(io::IO, proc::PGProcedure) =
@@ -724,13 +693,6 @@ end
 get_fullname(proc::PGProcedure) =
     (get_fullname(proc.schema)..., proc.name)
 
-function set_name!(proc::PGProcedure, name::AbstractString)
-    @assert proc.linked
-    unlink!(proc)
-    proc.name = name
-    link!(proc)
-end
-
 # Operations on triggers.
 
 Base.show(io::IO, tg::PGTrigger) =
@@ -761,11 +723,4 @@ end
 
 get_fullname(tg::PGTrigger) =
     (get_fullname(tg.table)..., tg.name)
-
-function set_name!(tg::PGTrigger, name::AbstractString)
-    @assert tg.linked
-    unlink!(tg)
-    tg.name = name
-    link!(tg)
-end
 
