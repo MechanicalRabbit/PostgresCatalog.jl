@@ -12,7 +12,7 @@ function introspect(conn)
         FROM pg_catalog.pg_namespace n
         ORDER BY n.nspname
     """)
-    foreach(zip(fetch!(NamedTuple, res)...)) do (oid, nspname)
+    foreach(zip(columntable(res)...)) do (oid, nspname)
         scm = add_schema!(cat, nspname)
         oid2schema[oid] = scm
     end
@@ -24,7 +24,7 @@ function introspect(conn)
         FROM pg_catalog.pg_enum e
         ORDER BY e.enumtypid, e.enumsortorder, e.oid
     """)
-    foreach(zip(fetch!(NamedTuple, res)...)) do (enumtypid, enumlabel)
+    foreach(zip(columntable(res)...)) do (enumtypid, enumlabel)
         lbls = get!(() -> String[], oid2labels, enumtypid)
         push!(lbls, enumlabel)
     end
@@ -36,7 +36,7 @@ function introspect(conn)
         FROM pg_catalog.pg_type t
         ORDER BY t.typnamespace, t.typname
     """)
-    foreach(zip(fetch!(NamedTuple, res)...)) do (oid, typnamespace, typname, typtype)
+    foreach(zip(columntable(res)...)) do (oid, typnamespace, typname, typtype)
         scm = oid2schema[typnamespace]
         typ =
             if typtype == "e"
@@ -56,7 +56,7 @@ function introspect(conn)
               HAS_TABLE_PRIVILEGE(c.oid, 'SELECT')
         ORDER BY c.relnamespace, c.relname
     """)
-    foreach(zip(fetch!(NamedTuple, res)...)) do (oid, relnamespace, relname)
+    foreach(zip(columntable(res)...)) do (oid, relnamespace, relname)
         scm = oid2schema[relnamespace]
         tbl = add_table!(scm, relname)
         oid2table[oid] = tbl
@@ -71,7 +71,7 @@ function introspect(conn)
               NOT a.attisdropped
         ORDER BY a.attrelid, a.attnum
     """)
-    foreach(zip(fetch!(NamedTuple, res)...)) do (attrelid, attnum, attname, atttypid, attnotnull)
+    foreach(zip(columntable(res)...)) do (attrelid, attnum, attname, atttypid, attnotnull)
         attrelid in keys(oid2table) || return
         tbl = oid2table[attrelid]
         typ = oid2type[atttypid]
@@ -85,7 +85,7 @@ function introspect(conn)
         FROM pg_catalog.pg_attrdef a
         ORDER BY a.adrelid, a.adnum
     """)
-    foreach(zip(fetch!(NamedTuple, res)...)) do (adrelid, adnum, adsrc)
+    foreach(zip(columntable(res)...)) do (adrelid, adnum, adsrc)
         (adrelid, adnum) in keys(oidnum2column) || return
         col = oidnum2column[(adrelid, adnum)]
         set_default!(col, adsrc)
@@ -99,7 +99,7 @@ function introspect(conn)
         WHERE c.relkind = 'S'
         ORDER BY c.relnamespace, c.relname
     """)
-    foreach(zip(fetch!(NamedTuple, res)...)) do (oid, relnamespace, relname)
+    foreach(zip(columntable(res)...)) do (oid, relnamespace, relname)
         scm = oid2schema[relnamespace]
         seq = add_sequence!(scm, relname)
         oid2sequence[oid] = seq
@@ -115,7 +115,7 @@ function introspect(conn)
               d.objsubid IS NOT NULL
         ORDER BY d.objid, d.refobjid, d.objsubid
     """)
-    foreach(zip(fetch!(NamedTuple, res)...)) do (objid, refobjid, refobjsubid)
+    foreach(zip(columntable(res)...)) do (objid, refobjid, refobjsubid)
         (refobjid, refobjsubid) in keys(oidnum2column) || return
         seq = oid2sequence[objid]
         col = oidnum2column[(refobjid, refobjsubid)]
@@ -130,7 +130,7 @@ function introspect(conn)
         WHERE c.relkind = 'i'
         ORDER BY c.relnamespace, c.relname
     """)
-    foreach(zip(fetch!(NamedTuple, res)...)) do (oid, relnamespace, relname, indrelid, indkey)
+    foreach(zip(columntable(res)...)) do (oid, relnamespace, relname, indrelid, indkey)
         indrelid in keys(oid2table) || return
         scm = oid2schema[relnamespace]
         tbl = oid2table[indrelid]
@@ -150,7 +150,7 @@ function introspect(conn)
         WHERE c.contype IN ('p', 'u')
         ORDER BY c.oid
     """)
-    foreach(zip(fetch!(NamedTuple, res)...)) do (oid, conname, contype, conrelid, conkey)
+    foreach(zip(columntable(res)...)) do (oid, conname, contype, conrelid, conkey)
         conrelid in keys(oid2table) || return
         tbl = oid2table[conrelid]
         cols = PGColumn[]
@@ -172,8 +172,8 @@ function introspect(conn)
         WHERE c.contype = 'f'
         ORDER BY c.oid
     """)
-    foreach(zip(fetch!(NamedTuple, res)...)) do (oid, conname, conrelid, conkey, confrelid, confkey,
-                                                 confdeltype, confupdtype)
+    foreach(zip(columntable(res)...)) do (oid, conname, conrelid, conkey, confrelid, confkey,
+                                          confdeltype, confupdtype)
         conrelid in keys(oid2table) || return
         tbl = oid2table[conrelid]
         cols = PGColumn[]
@@ -209,7 +209,7 @@ function introspect(conn)
         FROM pg_catalog.pg_proc p
         ORDER BY p.pronamespace, p.proname
     """)
-    foreach(zip(fetch!(NamedTuple, res)...)) do (oid, pronamespace, proname, proargtypes, prorettype, prosrc)
+    foreach(zip(columntable(res)...)) do (oid, pronamespace, proname, proargtypes, prorettype, prosrc)
         scm = oid2schema[pronamespace]
         typs = getindex.(Ref(oid2type), parse.(UInt32, split(proargtypes)))
         ret_typ = oid2type[prorettype]
@@ -225,7 +225,7 @@ function introspect(conn)
         WHERE NOT t.tgisinternal
         ORDER BY t.tgrelid, t.tgname
     """)
-    foreach(zip(fetch!(NamedTuple, res)...)) do (oid, tgrelid, tgname, tgfoid)
+    foreach(zip(columntable(res)...)) do (oid, tgrelid, tgname, tgfoid)
         tgrelid in keys(oid2table) || return
         tbl = oid2table[tgrelid]
         proc = oid2procedure[tgfoid]
@@ -246,7 +246,7 @@ function introspect(conn)
                              'pg_catalog.pg_trigger'::regclass)
         ORDER BY d.objoid, d.classoid, d.objsubid
     """)
-    foreach(zip(fetch!(NamedTuple, res)...)) do (relname, objoid, objsubid, description)
+    foreach(zip(columntable(res)...)) do (relname, objoid, objsubid, description)
         if relname == "pg_namespace"
             scm = oid2schema[objoid]
             set_comment!(scm, description)

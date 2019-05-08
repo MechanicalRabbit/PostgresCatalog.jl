@@ -5,6 +5,7 @@
 module PostgresCatalog
 
 using LibPQ
+using Tables
 
 include("sql.jl")
 include("rectypes.jl")
