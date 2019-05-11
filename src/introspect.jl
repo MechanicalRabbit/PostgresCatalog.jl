@@ -2,6 +2,11 @@
 # Introspecting the database structure.
 #
 
+"""
+    introspect(conn) :: PGCatalog
+
+Introspects the structure of a Postgres database.
+"""
 function introspect(conn)
     cat = PGCatalog()
 

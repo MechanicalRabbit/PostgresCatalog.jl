@@ -4,6 +4,8 @@
 
 module PostgresCatalog
 
+export introspect
+
 using LibPQ
 using Tables
 
