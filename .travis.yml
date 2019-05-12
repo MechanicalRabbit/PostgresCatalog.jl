@@ -1,0 +1,46 @@
+# See https://github.com/JuliaLang/Example.jl/blob/master/.travis.yml
+
+language: julia
+
+os:
+- linux
+
+julia:
+- 1.0   # LTS release
+- 1.1   # Current stable release
+- nightly
+
+matrix:
+  allow_failures:
+  - julia: nightly
+
+notifications:
+  email: false
+
+addons:
+  postgresql: "9.4"
+
+before_script:
+- createdb -U postgres test
+
+env:
+  global:
+  - DOCUMENTER_DEBUG=true
+  - PGHOST=/var/run/postgresql
+  - PGPORT=5432
+  - PGUSER=postgres
+  - PGDATABASE=test
+
+after_success:
+# push coverage results
+- julia -e 'using Pkg; cd(Pkg.dir("PostgresCatalog")); include("test/coverage.jl")'
+
+jobs:
+  include:
+  # deploy documentation
+  - stage: "Documentation"
+    os: linux
+    julia: 1.0
+    script:
+    - julia -e 'using Pkg; cd(Pkg.dir("PostgresCatalog")); include("doc/make.jl")'
+    after_success: skip
