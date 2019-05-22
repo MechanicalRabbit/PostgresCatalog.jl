@@ -3,11 +3,21 @@
 #
 
 @inline Base.getproperty(cat::PGCatalog, prop::Symbol) =
-    getfield(cat, prop)
+    if prop === :create_schema!
+        (conn, name) -> create_schema!(conn, cat, name)
+    else
+        getfield(cat, prop)
+    end
 
 @inline Base.getproperty(scm::PGSchema, prop::Symbol) =
     if prop === :fullname
         get_fullname(scm)
+    elseif prop === :alter_name!
+        (conn, name) -> alter_name!(conn, scm, name)
+    elseif prop === :alter_comment!
+        (conn, comment) -> alter_comment!(conn, scm, comment)
+    elseif prop === :drop!
+        conn -> drop!(conn, scm)
     else
         getfield(scm, prop)
     end
