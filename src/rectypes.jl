@@ -1,3 +1,6 @@
+#
+# Defining mutually-recursive types.
+#
 
 macro rectypes(blk)
     if Meta.isexpr(blk, :block)

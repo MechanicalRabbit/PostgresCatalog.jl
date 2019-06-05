@@ -1,7 +1,7 @@
 # PostgresCatalog.jl
 
-*PostgresCatalog is a Julia library for introspecting and manipulating the
-structure of a Postgres database.*
+*PostgresCatalog is a Julia library for introspecting the structure of a
+Postgres database.*
 
 [![Build Status][travis-img]][travis-url]
 [![Code Coverage][codecov-img]][codecov-url]

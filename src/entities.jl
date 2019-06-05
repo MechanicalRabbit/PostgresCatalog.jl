@@ -7,35 +7,6 @@
 
 @rectypes begin
 
-mutable struct PGTrigger
-    linked::Bool
-
-    table::PGTable
-    name::String
-    procedure::PGProcedure
-    comment::Union{String,Nothing}
-
-    PGTrigger(tbl, name, proc) =
-        new(false, tbl, name, proc, nothing)
-end
-
-mutable struct PGProcedure
-    linked::Bool
-
-    schema::PGSchema
-    name::String
-    types::Vector{PGType}
-    return_type::PGType
-    source::String
-    comment::Union{String,Nothing}
-
-    triggers::Set{PGTrigger}
-
-    PGProcedure(scm, name, typs, ret_typ, src) =
-        new(false, scm, name, typs, ret_typ, src, nothing,
-            Set{PGTrigger}())
-end
-
 mutable struct PGForeignKey
     linked::Bool
 
@@ -65,31 +36,6 @@ mutable struct PGUniqueKey
         new(false, tbl, name, cols, primary, nothing)
 end
 
-mutable struct PGIndex
-    linked::Bool
-
-    schema::PGSchema
-    name::String
-    table::PGTable
-    columns::Vector{PGColumn}
-    comment::Union{String,Nothing}
-
-    PGIndex(scm, name, tbl, cols) =
-        new(false, scm, name, tbl, cols, nothing)
-end
-
-mutable struct PGSequence
-    linked::Bool
-
-    schema::PGSchema
-    name::String
-    column::Union{PGColumn,Nothing}
-    comment::Union{String,Nothing}
-
-    PGSequence(scm, name) =
-        new(false, scm, name, nothing, nothing)
-end
-
 mutable struct PGColumn
     linked::Bool
 
@@ -100,16 +46,12 @@ mutable struct PGColumn
     default::Union{String,Nothing}
     comment::Union{String,Nothing}
 
-    sequences::Set{PGSequence}
-    indexes::Set{PGIndex}
     unique_keys::Set{PGUniqueKey}
     foreign_keys::Set{PGForeignKey}
     referring_foreign_keys::Set{PGForeignKey}
 
     PGColumn(tbl, name, typ, not_null) =
         new(false, tbl, name, typ, not_null, nothing, nothing,
-            Set{PGSequence}(),
-            Set{PGIndex}(),
             Set{PGUniqueKey}(),
             Set{PGForeignKey}(),
             Set{PGForeignKey}())
@@ -123,22 +65,18 @@ mutable struct PGTable
     comment::Union{String,Nothing}
 
     columns::Dict{String,PGColumn}
-    indexes::Set{PGIndex}
     primary_key::Union{PGUniqueKey,Nothing}
     unique_keys::Dict{String,PGUniqueKey}
     foreign_keys::Dict{String,PGForeignKey}
     referring_foreign_keys::Set{PGForeignKey}
-    triggers::Dict{String,PGTrigger}
 
     PGTable(scm, name) =
         new(false, scm, name, nothing,
             Dict{String,PGColumn}(),
-            Set{PGIndex}(),
             nothing,
             Dict{String,PGUniqueKey}(),
             Dict{String,PGForeignKey}(),
-            Set{PGForeignKey}(),
-            Dict{String,PGTrigger}())
+            Set{PGForeignKey}())
 end
 
 mutable struct PGType
@@ -150,12 +88,10 @@ mutable struct PGType
     comment::Union{String,Nothing}
 
     columns::Set{PGColumn}
-    procedures::Set{PGProcedure}
 
     PGType(scm, name, lbls=nothing) =
         new(false, scm, name, lbls, nothing,
-            Set{PGColumn}(),
-            Set{PGProcedure}())
+            Set{PGColumn}())
 end
 
 mutable struct PGSchema
@@ -167,24 +103,20 @@ mutable struct PGSchema
 
     types::Dict{String,PGType}
     tables::Dict{String,PGTable}
-    indexes::Dict{String,PGIndex}
-    sequences::Dict{String,PGSequence}
-    procedures::Dict{Tuple{String,Vector{PGType}},PGProcedure}
 
     PGSchema(cat, name) =
         new(false, cat, name, nothing,
             Dict{String,PGType}(),
-            Dict{String,PGTable}(),
-            Dict{String,PGIndex}(),
-            Dict{String,PGSequence}(),
-            Dict{Tuple{String,Vector{PGType}},PGProcedure}())
+            Dict{String,PGTable}())
 end
 
 mutable struct PGCatalog
+    name::String
+
     schemas::Dict{String,PGSchema}
 
-    PGCatalog() =
-        new(Dict{String,PGSchema}())
+    PGCatalog(name) =
+        new(name, Dict{String,PGSchema}())
 end
 
 end
@@ -192,7 +124,7 @@ end
 # Catalog operations.
 
 Base.show(io::IO, cat::PGCatalog) =
-    print(io, "<DATABASE>")
+    print(io, "DATABASE $(sql_name(cat.name))")
 
 Base.getindex(cat::PGCatalog, name::AbstractString) =
     cat.schemas[name]
@@ -213,17 +145,17 @@ end
 
 # Some common operations.
 
-get_name(ety::Union{PGSchema,PGType,PGTable,PGColumn,PGSequence,PGIndex,PGUniqueKey,PGForeignKey,PGProcedure,PGTrigger}) =
+get_name(ety::Union{PGSchema,PGType,PGTable,PGColumn,PGUniqueKey,PGForeignKey}) =
     ety.name
 
-function set_name!(ety::Union{PGSchema,PGType,PGTable,PGColumn,PGSequence,PGIndex,PGUniqueKey,PGForeignKey,PGProcedure,PGTrigger}, name::AbstractString)
+function set_name!(ety::Union{PGSchema,PGType,PGTable,PGColumn,PGUniqueKey,PGForeignKey}, name::AbstractString)
     @assert ety.linked
     unlink!(ety)
     ety.name = name
     link!(ety)
 end
 
-function set_comment!(ety::Union{PGSchema,PGType,PGTable,PGColumn,PGSequence,PGIndex,PGUniqueKey,PGForeignKey,PGProcedure,PGTrigger}, comment::Union{AbstractString,Nothing})
+function set_comment!(ety::Union{PGSchema,PGType,PGTable,PGColumn,PGUniqueKey,PGForeignKey}, comment::Union{AbstractString,Nothing})
     @assert ety.linked
     ety.comment = comment
     ety
@@ -232,7 +164,7 @@ end
 # Schema operations.
 
 Base.show(io::IO, scm::PGSchema) =
-    print(io, "<$(!scm.linked ? "DROPPED " : "")SCHEMA $(sql_name(scm.name))>")
+    print(io, "$(!scm.linked ? "DROPPED " : "")SCHEMA $(sql_name(scm.name))")
 
 Base.getindex(scm::PGSchema, name::AbstractString) =
     scm.tables[name]
@@ -263,9 +195,6 @@ end
 
 function remove!(scm::PGSchema)
     @assert scm.linked
-    foreach(remove!, collect(values(scm.procedures)))
-    foreach(remove!, collect(values(scm.sequences)))
-    foreach(remove!, collect(values(scm.indexes)))
     foreach(remove!, collect(values(scm.tables)))
     foreach(remove!, collect(values(scm.types)))
     unlink!(scm)
@@ -287,41 +216,10 @@ function add_table!(scm::PGSchema, name::AbstractString)
     link!(tbl)
 end
 
-function add_index!(scm::PGSchema, name::AbstractString, tbl::PGTable, cols::Vector{PGColumn})
-    @assert scm.linked
-    @assert tbl.linked
-    @assert tbl.schema === scm
-    @assert length(cols) > 0
-    for col in cols
-        @assert col.linked
-        @assert col.table === tbl
-    end
-    idx = PGIndex(scm, name, tbl, cols)
-    link!(idx)
-end
-
-function add_sequence!(scm::PGSchema, name::AbstractString)
-    @assert scm.linked
-    seq = PGSequence(scm, name)
-    link!(seq)
-end
-
-function add_procedure!(scm::PGSchema, name::AbstractString, typs::Vector{PGType}, ret_typ::PGType, src::AbstractString)
-    @assert scm.linked
-    for typ in typs
-        @assert typ.linked
-        @assert typ.schema.catalog === scm.catalog
-    end
-    @assert ret_typ.linked
-    @assert ret_typ.schema.catalog === scm.catalog
-    proc = PGProcedure(scm, name, typs, ret_typ, src)
-    link!(proc)
-end
-
 # Type operations.
 
 Base.show(io::IO, typ::PGType) =
-    print(io, "<$(!typ.linked ? "DROPPED " : "")TYPE $(sql_name(get_fullname(typ)))>")
+    print(io, "$(!typ.linked ? "DROPPED " : "")TYPE $(sql_name(get_fullname(typ)))")
 
 function link!(typ::PGType)
     @assert !typ.linked
@@ -340,7 +238,6 @@ end
 
 function remove!(typ::PGType)
     @assert typ.linked
-    foreach(remove!, collect(typ.procedures))
     foreach(remove!, collect(typ.columns))
     unlink!(typ)
     typ.schema
@@ -352,7 +249,7 @@ get_fullname(typ::PGType) =
 # Table operations.
 
 Base.show(io::IO, tbl::PGTable) =
-    print(io, "<$(!tbl.linked ? "DROPPED " : "")TABLE $(sql_name(get_fullname(tbl)))>")
+    print(io, "$(!tbl.linked ? "DROPPED " : "")TABLE $(sql_name(get_fullname(tbl)))")
 
 Base.getindex(tbl::PGTable, name::AbstractString) =
     tbl.columns[name]
@@ -383,11 +280,9 @@ end
 
 function remove!(tbl::PGTable)
     @assert tbl.linked
-    foreach(remove!, collect(tbl.triggers))
     foreach(remove!, collect(tbl.referring_foreign_keys))
     foreach(remove!, collect(values(tbl.foreign_keys)))
     foreach(remove!, collect(values(tbl.unique_keys)))
-    foreach(remove!, collect(tbl.indexes))
     foreach(remove!, collect(values(tbl.columns)))
     unlink!(tbl)
     tbl.schema
@@ -433,18 +328,10 @@ function add_foreign_key!(tbl::PGTable, name::AbstractString, cols::Vector{PGCol
     link!(fk)
 end
 
-function add_trigger!(tbl::PGTable, name::String, proc::PGProcedure)
-    @assert tbl.linked
-    @assert proc.linked
-    @assert tbl.schema.catalog === proc.schema.catalog
-    tg = PGTrigger(tbl, name, proc)
-    link!(tg)
-end
-
 # Column operations.
 
 Base.show(io::IO, col::PGColumn) =
-    print(io, "<$(!col.linked ? "DROPPED " : "")COLUMN $(sql_name(get_fullname(col))) $(sql_name(get_fullname(col.type_))) $(col.not_null ? "NOT " : "")NULL>")
+    print(io, "$(!col.linked ? "DROPPED " : "")COLUMN $(sql_name(get_fullname(col))) $(sql_name(get_fullname(col.type_))) $(col.not_null ? "NOT " : "")NULL")
 
 function link!(col::PGColumn)
     @assert !col.linked
@@ -468,7 +355,6 @@ function remove!(col::PGColumn)
     foreach(remove!, collect(col.referring_foreign_keys))
     foreach(remove!, collect(col.foreign_keys))
     foreach(remove!, collect(col.unique_keys))
-    foreach(remove!, collect(col.indexes))
     unlink!(col)
     col.table
 end
@@ -497,93 +383,10 @@ function set_default!(col::PGColumn, default::Union{AbstractString,Nothing})
     col
 end
 
-# Operations on sequences.
-
-Base.show(io::IO, seq::PGSequence) =
-    print(io, "<$(!seq.linked ? "DROPPED " : "")SEQUENCE $(sql_name(get_fullname(seq)))>")
-
-function link!(seq::PGSequence)
-    @assert !seq.linked
-    @assert !(seq.name in keys(seq.schema.sequences))
-    seq.schema.sequences[seq.name] = seq
-    if seq.column !== nothing
-        push!(seq.column.sequences, seq)
-    end
-    seq.linked = true
-    seq
-end
-
-function unlink!(seq::PGSequence)
-    @assert seq.linked
-    if seq.column !== nothing
-        delete!(seq.column.sequences, seq)
-    end
-    delete!(seq.schema.sequences, seq.name)
-    seq.linked = false
-    seq
-end
-
-function remove!(seq::PGSequence)
-    @assert seq.linked
-    unlink!(seq)
-    seq.schema
-end
-
-get_fullname(seq::PGSequence) =
-    (get_fullname(seq.schema)..., seq.name)
-
-function set_column!(seq::PGSequence, col::Union{PGColumn,Nothing})
-    @assert seq.linked
-    if col !== nothing
-        @assert col.linked
-        @assert seq.schema.catalog === col.table.schema.catalog
-    end
-    unlink!(seq)
-    seq.column = col
-    link!(seq)
-end
-
-# Operations on indexes.
-
-Base.show(io::IO, idx::PGIndex) =
-    print(io, "<$(!idx.linked ? "DROPPED " : "")INDEX $(sql_name(get_fullname(idx)))>")
-
-function link!(idx::PGIndex)
-    @assert !idx.linked
-    @assert !(idx.name in keys(idx.schema.indexes))
-    idx.schema.indexes[idx.name] = idx
-    push!(idx.table.indexes, idx)
-    for col in idx.columns
-        push!(col.indexes, idx)
-    end
-    idx.linked = true
-    idx
-end
-
-function unlink!(idx::PGIndex)
-    @assert idx.linked
-    for col in idx.columns
-        delete!(col.indexes, idx)
-    end
-    delete!(idx.table.indexes, idx)
-    delete!(idx.schema.indexes, idx.name)
-    idx.linked = false
-    idx
-end
-
-function remove!(idx::PGIndex)
-    @assert idx.linked
-    unlink!(idx)
-    idx.schema
-end
-
-get_fullname(idx::PGIndex) =
-    (get_fullname(idx.schema)..., idx.name)
-
 # Operations on unique key constraints.
 
 Base.show(io::IO, uk::PGUniqueKey) =
-    print(io, "<$(!uk.linked ? "DROPPED " : "")$(uk.primary ? "PRIMARY" : "UNIQUE") KEY $(sql_name(get_fullname(uk))) ($(sql_name(get_name.(uk.columns))))>")
+    print(io, "$(!uk.linked ? "DROPPED " : "")CONSTRAINT $(sql_name(get_fullname(uk))) $(uk.primary ? "PRIMARY KEY" : "UNIQUE") ($(sql_name(get_name.(uk.columns))))")
 
 function link!(uk::PGUniqueKey)
     @assert !uk.linked
@@ -625,7 +428,7 @@ get_fullname(uk::PGUniqueKey) =
 # Operations on foreign key constraints.
 
 Base.show(io::IO, fk::PGForeignKey) =
-print(io, "<$(!fk.linked ? "DROPPED " : "")FOREIGN KEY $(sql_name(get_fullname(fk))) ($(sql_name(get_name.(fk.columns)))) REFERENCES $(sql_name(get_fullname(fk.target_table))) ($(sql_name(get_name.(fk.target_columns))))>")
+    print(io, "$(!fk.linked ? "DROPPED " : "")CONSTRAINT $(sql_name(get_fullname(fk))) FOREIGN KEY ($(sql_name(get_name.(fk.columns)))) REFERENCES $(sql_name(get_fullname(fk.target_table))) ($(sql_name(get_name.(fk.target_columns))))")
 
 function link!(fk::PGForeignKey)
     @assert !fk.linked
@@ -664,73 +467,4 @@ end
 
 get_fullname(fk::PGForeignKey) =
     (get_fullname(fk.table)..., fk.name)
-
-# Operations on stored procedures.
-
-Base.show(io::IO, proc::PGProcedure) =
-    print(io, "<$(!proc.linked ? "DROPPED " : "")PROCEDURE $(sql_name(get_fullname(proc)))($(sql_name(get_fullname.(proc.types))))>")
-
-function link!(proc::PGProcedure)
-    @assert !proc.linked
-    key = (proc.name, proc.types)
-    @assert !(key in keys(proc.schema.procedures))
-    proc.schema.procedures[key] = proc
-    for typ in proc.types
-        push!(typ.procedures, proc)
-    end
-    push!(proc.return_type.procedures, proc)
-    proc.linked = true
-    proc
-end
-
-function unlink!(proc::PGProcedure)
-    @assert proc.linked
-    delete!(proc.return_type.procedures, proc)
-    for typ in proc.types
-        delete!(typ.procedures, proc)
-    end
-    delete!(proc.schema.procedures, (proc.name, proc.types))
-    proc.linked = false
-    proc
-end
-
-function remove!(proc::PGProcedure)
-    @assert proc.linked
-    unlink!(proc)
-    proc.schema
-end
-
-get_fullname(proc::PGProcedure) =
-    (get_fullname(proc.schema)..., proc.name)
-
-# Operations on triggers.
-
-Base.show(io::IO, tg::PGTrigger) =
-    print(io, "<$(!tg.linked ? "DROPPED " : "")TRIGGER $(sql_name(get_fullname(tg)))>")
-
-function link!(tg::PGTrigger)
-    @assert !tg.linked
-    @assert !(tg.name in keys(tg.table.triggers))
-    tg.table.triggers[tg.name] = tg
-    push!(tg.procedure.triggers, tg)
-    tg.linked = true
-    tg
-end
-
-function unlink!(tg::PGTrigger)
-    @assert tg.linked
-    delete!(tg.procedure.triggers, tg)
-    delete!(tg.table.triggers, tg.name)
-    tg.linked = false
-    tg
-end
-
-function remove!(tg::PGTrigger)
-    @assert tg.linked
-    unlink!(tg)
-    tg.table
-end
-
-get_fullname(tg::PGTrigger) =
-    (get_fullname(tg.table)..., tg.name)
 

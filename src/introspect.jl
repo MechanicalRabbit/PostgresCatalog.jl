@@ -8,7 +8,11 @@
 Introspects the structure of a Postgres database.
 """
 function introspect(conn)
-    cat = PGCatalog()
+    # Create the catalog object.
+    res = execute(conn, """
+        SELECT current_database()
+    """)
+    cat = PGCatalog(res[1,1])
 
     # Extract schemas.
     oid2schema = Dict{UInt32,PGSchema}()
@@ -96,64 +100,13 @@ function introspect(conn)
         set_default!(col, adsrc)
     end
 
-    # Extract sequences.
-    oid2sequence = Dict{UInt32,PGSequence}()
-    res = execute(conn, """
-        SELECT c.oid, c.relnamespace, c.relname
-        FROM pg_catalog.pg_class c
-        WHERE c.relkind = 'S'
-        ORDER BY c.relnamespace, c.relname
-    """)
-    foreach(columntable(res)...) do oid, relnamespace, relname
-        scm = oid2schema[relnamespace]
-        seq = add_sequence!(scm, relname)
-        oid2sequence[oid] = seq
-    end
-
-    # Extract sequence owners.
-    res = execute(conn, """
-        SELECT d.objid, d.refobjid, d.refobjsubid
-        FROM pg_catalog.pg_depend d JOIN
-             pg_catalog.pg_class c ON (d.classid = 'pg_class'::regclass AND d.objid = c.oid)
-        WHERE c.relkind = 'S' AND
-              d.refclassid = 'pg_class'::regclass AND
-              d.objsubid IS NOT NULL
-        ORDER BY d.objid, d.refobjid, d.objsubid
-    """)
-    foreach(columntable(res)...) do objid, refobjid, refobjsubid
-        (refobjid, refobjsubid) in keys(oidnum2column) || return
-        seq = oid2sequence[objid]
-        col = oidnum2column[(refobjid, refobjsubid)]
-        set_column!(seq, col)
-    end
-
-    # Extract indexes.
-    res = execute(conn, """
-        SELECT c.oid, c.relnamespace, c.relname, i.indrelid, i.indkey
-        FROM pg_catalog.pg_class c JOIN
-             pg_catalog.pg_index i ON (c.oid = i.indexrelid)
-        WHERE c.relkind = 'i'
-        ORDER BY c.relnamespace, c.relname
-    """)
-    foreach(columntable(res)...) do oid, relnamespace, relname, indrelid, indkey
-        indrelid in keys(oid2table) || return
-        scm = oid2schema[relnamespace]
-        tbl = oid2table[indrelid]
-        cols = PGColumn[]
-        for num in parse.(Int16, split(indkey))
-            num > 0 || return
-            push!(cols, oidnum2column[(indrelid, num)])
-        end
-        add_index!(scm, relname, tbl, cols)
-    end
-
     # Extract unique keys.
     oid2unique_key = Dict{UInt32,PGUniqueKey}()
     res = execute(conn, """
         SELECT c.oid, c.conname, c.contype, c.conrelid, c.conkey
         FROM pg_catalog.pg_constraint c
         WHERE c.contype IN ('p', 'u')
-        ORDER BY c.oid
+        ORDER BY c.conrelid, c.conname
     """)
     foreach(columntable(res)...) do oid, conname, contype, conrelid, conkey
         conrelid in keys(oid2table) || return
@@ -175,7 +128,7 @@ function introspect(conn)
                c.confdeltype, c.confupdtype
         FROM pg_catalog.pg_constraint c
         WHERE c.contype = 'f'
-        ORDER BY c.oid
+        ORDER BY c.conrelid, c.conname
     """)
     foreach(columntable(res)...) do oid, conname, conrelid, conkey, confrelid, confkey, confdeltype, confupdtype
         conrelid in keys(oid2table) || return
@@ -206,37 +159,6 @@ function introspect(conn)
         oid2foreign_key[oid] = fk
     end
 
-    # Extract stored procedures.
-    oid2procedure = Dict{UInt32,PGProcedure}()
-    res = execute(conn, """
-        SELECT p.oid, p.pronamespace, p.proname, p.proargtypes, p.prorettype, p.prosrc
-        FROM pg_catalog.pg_proc p
-        ORDER BY p.pronamespace, p.proname
-    """)
-    foreach(columntable(res)...) do oid, pronamespace, proname, proargtypes, prorettype, prosrc
-        scm = oid2schema[pronamespace]
-        typs = getindex.(Ref(oid2type), parse.(UInt32, split(proargtypes)))
-        ret_typ = oid2type[prorettype]
-        proc = add_procedure!(scm, proname, typs, ret_typ, prosrc)
-        oid2procedure[oid] = proc
-    end
-
-    # Extract triggers.
-    oid2trigger = Dict{UInt32,PGTrigger}()
-    res = execute(conn, """
-        SELECT t.oid, t.tgrelid, t.tgname, t.tgfoid
-        FROM pg_catalog.pg_trigger t
-        WHERE NOT t.tgisinternal
-        ORDER BY t.tgrelid, t.tgname
-    """)
-    foreach(columntable(res)...) do oid, tgrelid, tgname, tgfoid
-        tgrelid in keys(oid2table) || return
-        tbl = oid2table[tgrelid]
-        proc = oid2procedure[tgfoid]
-        tg = add_trigger!(tbl, tgname, proc)
-        oid2trigger[oid] = tg
-    end
-
     # Extract comments
     res = execute(conn, """
         SELECT c.relname, d.objoid, d.objsubid, d.description
@@ -245,9 +167,7 @@ function introspect(conn)
         WHERE d.classoid IN ('pg_catalog.pg_namespace'::regclass,
                              'pg_catalog.pg_type'::regclass,
                              'pg_catalog.pg_class'::regclass,
-                             'pg_catalog.pg_constraint'::regclass,
-                             'pg_catalog.pg_proc'::regclass,
-                             'pg_catalog.pg_trigger'::regclass)
+                             'pg_catalog.pg_constraint'::regclass)
         ORDER BY d.objoid, d.classoid, d.objsubid
     """)
     foreach(columntable(res)...) do relname, objoid, objsubid, description
@@ -263,24 +183,12 @@ function introspect(conn)
         elseif relname == "pg_class" && objsubid == 0 && objoid in keys(oid2table)
             tbl = oid2table[objoid]
             set_comment!(tbl, description)
-        elseif relname == "pg_class" && objsubid == 0 && objoid in keys(oid2sequence)
-            seq = oid2sequence[objoid]
-            set_comment!(seq, description)
-        elseif relname == "pg_class" && objsubid == 0 && objoid in keys(oid2index)
-            idx = oid2index[objoid]
-            set_comment!(idx, description)
         elseif relname == "pg_constraint" && objoid in keys(oid2unique_key)
             uk = oid2unique_key[objoid]
             set_comment!(uk, description)
         elseif relname == "pg_constraint" && objoid in keys(oid2foreign_key)
             fk = oid2foreign_key[objoid]
             set_comment!(fk, description)
-        elseif relname == "pg_proc"
-            proc = oid2procedure[objoid]
-            set_comment!(proc, description)
-        elseif relname == "pg_trigger" && objoid in keys(oid2trigger)
-            tg = oid2trigger[objoid]
-            set_comment!(tg, description)
         end
     end
 
