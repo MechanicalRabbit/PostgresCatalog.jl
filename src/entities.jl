@@ -2,6 +2,7 @@
 # Catalog structure.
 #
 
+
 # Entity containers.
 
 @rectypes begin
@@ -199,6 +200,9 @@ Base.getindex(cat::PGCatalog, name::AbstractString) =
 Base.get(cat::PGCatalog, name::AbstractString, default) =
     get(cat.schemas, name, default)
 
+Base.length(cat::PGCatalog) =
+    length(cat.schemas)
+
 Base.iterate(cat::PGCatalog, state...) =
     iterate(values(cat.schemas), state...)
 
@@ -235,6 +239,9 @@ Base.getindex(scm::PGSchema, name::AbstractString) =
 
 Base.get(scm::PGSchema, name::AbstractString, default) =
     get(scm.tables, name, default)
+
+Base.length(scm::PGSchema) =
+    length(scm.tables)
 
 Base.iterate(scm::PGSchema, state...) =
     iterate(values(scm.tables), state...)
@@ -311,14 +318,6 @@ function add_procedure!(scm::PGSchema, name::AbstractString, typs::Vector{PGType
     link!(proc)
 end
 
-function add_trigger!(tbl::PGTable, name::String, proc::PGProcedure)
-    @assert tbl.linked
-    @assert proc.linked
-    @assert tbl.schema.catalog === proc.schema.catalog
-    tg = PGTrigger(tbl, name, proc)
-    link!(tg)
-end
-
 # Type operations.
 
 Base.show(io::IO, typ::PGType) =
@@ -360,6 +359,9 @@ Base.getindex(tbl::PGTable, name::AbstractString) =
 
 Base.get(tbl::PGTable, name::AbstractString, default) =
     get(tbl.columns, name, default)
+
+Base.length(tbl::PGTable) =
+    length(tbl.columns)
 
 Base.iterate(tbl::PGTable, state...) =
     iterate(values(tbl.columns), state...)
@@ -429,6 +431,14 @@ function add_foreign_key!(tbl::PGTable, name::AbstractString, cols::Vector{PGCol
     end
     fk = PGForeignKey(tbl, name, cols, ttbl, tcols, on_delete, on_update)
     link!(fk)
+end
+
+function add_trigger!(tbl::PGTable, name::String, proc::PGProcedure)
+    @assert tbl.linked
+    @assert proc.linked
+    @assert tbl.schema.catalog === proc.schema.catalog
+    tg = PGTrigger(tbl, name, proc)
+    link!(tg)
 end
 
 # Column operations.
