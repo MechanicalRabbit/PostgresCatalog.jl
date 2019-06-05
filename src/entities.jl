@@ -10,44 +10,89 @@ end
 Base.lt(::NameOrdering, a, b) = isless(get_name(a), get_name(b))
 
 struct SortedVector{T} <: AbstractVector{T}
-    data::Vector{T}
+    idx::Vector{T}
 
     SortedVector{T}() where {T} = new(T[])
 end
 
-@inline Base.size(sv::SortedVector) = size(sv.data)
+@inline Base.size(sv::SortedVector) = size(sv.idx)
 
 Base.IndexStyle(::Type{<:SortedVector}) = IndexLinear()
 
 @inline Base.getindex(sv::SortedVector, k::Number) =
-    sv.data[k]
+    sv.idx[k]
 
 function Base.getindex(sv::SortedVector, n::AbstractString)
-    r = searchsorted(sv.data, n, order=NameOrdering())
+    r = searchsorted(sv.idx, n, order=NameOrdering())
     !isempty(r) || throw(KeyError(n))
-    sv.data[first(r)]
+    sv.idx[first(r)]
 end
 
 function Base.get(sv::SortedVector, n::AbstractString, default)
-    r = searchsorted(sv.data, n, order=NameOrdering())
+    r = searchsorted(sv.idx, n, order=NameOrdering())
     !isempty(r) || return default
-    sv.data[first(r)]
+    sv.idx[first(r)]
 end
 
 function Base.in(sv::SortedVector, n::AbstractString)
-    !isempty(searchsorted(sv.data, n, order=NameOrdering()))
+    !isempty(searchsorted(sv.idx, n, order=NameOrdering()))
 end
 
 function Base.push!(sv::SortedVector{T}, x::T) where {T}
-    r = searchsorted(sv.data, x, order=NameOrdering())
-    splice!(sv.data, r, Ref(x))
+    r = searchsorted(sv.idx, x, order=NameOrdering())
+    splice!(sv.idx, r, Ref(x))
     sv
 end
 
 function Base.delete!(sv::SortedVector, n::AbstractString)
-    r = searchsorted(sv.data, x, order=NameOrdering())
-    splice!(sv.data, r)
+    r = searchsorted(sv.idx, x, order=NameOrdering())
+    splice!(sv.idx, r)
     sv
+end
+
+struct IndexedVector{T} <: AbstractVector{T}
+    data::Vector{T}
+    idx::Vector{T}
+
+    IndexedVector{T}() where {T} = new(T[], T[])
+end
+
+@inline Base.size(iv::IndexedVector) = size(iv.data)
+
+Base.IndexStyle(::Type{<:IndexedVector}) = IndexLinear()
+
+@inline Base.getindex(iv::IndexedVector, k::Number) =
+    iv.data[k]
+
+function Base.getindex(iv::IndexedVector, n::AbstractString)
+    r = searchsorted(iv.idx, n, order=NameOrdering())
+    !isempty(r) || throw(KeyError(n))
+    iv.idx[first(r)]
+end
+
+function Base.get(iv::IndexedVector, n::AbstractString, default)
+    r = searchsorted(iv.idx, n, order=NameOrdering())
+    !isempty(r) || return default
+    iv.idx[first(r)]
+end
+
+function Base.in(iv::IndexedVector, n::AbstractString)
+    !isempty(searchsorted(iv.idx, n, order=NameOrdering()))
+end
+
+function Base.push!(iv::IndexedVector{T}, x::T) where {T}
+    push!(iv.data, x)
+    r = searchsorted(iv.idx, x, order=NameOrdering())
+    splice!(iv.idx, r, Ref(x))
+    iv
+end
+
+function Base.delete!(iv::IndexedVector, n::AbstractString)
+    k = findfirst(x -> get_name(x) == n, iv.data)
+    k === nothing || delete!(iv.data, k)
+    r = searchsorted(iv.idx, x, order=NameOrdering())
+    splice!(iv.idx, r)
+    iv
 end
 
 # Entity containers.
@@ -111,7 +156,7 @@ mutable struct PGTable
     name::String
     comment::Union{String,Nothing}
 
-    columns::SortedVector{PGColumn}
+    columns::IndexedVector{PGColumn}
     primary_key::Union{PGUniqueKey,Nothing}
     unique_keys::SortedVector{PGUniqueKey}
     foreign_keys::SortedVector{PGForeignKey}
@@ -119,7 +164,7 @@ mutable struct PGTable
 
     PGTable(scm, name) =
         new(false, scm, name, nothing,
-            SortedVector{PGColumn}(),
+            IndexedVector{PGColumn}(),
             nothing,
             SortedVector{PGUniqueKey}(),
             SortedVector{PGForeignKey}(),
