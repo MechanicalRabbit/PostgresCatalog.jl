@@ -2,6 +2,53 @@
 # Catalog structure.
 #
 
+# Sorted collections.
+
+struct NameOrdering <: Base.Ordering
+end
+
+Base.lt(::NameOrdering, a, b) = isless(get_name(a), get_name(b))
+
+struct SortedVector{T} <: AbstractVector{T}
+    data::Vector{T}
+
+    SortedVector{T}() where {T} = new(T[])
+end
+
+@inline Base.size(sv::SortedVector) = size(sv.data)
+
+Base.IndexStyle(::Type{<:SortedVector}) = IndexLinear()
+
+@inline Base.getindex(sv::SortedVector, k::Number) =
+    sv.data[k]
+
+function Base.getindex(sv::SortedVector, n::AbstractString)
+    r = searchsorted(sv.data, n, order=NameOrdering())
+    !isempty(r) || throw(KeyError(n))
+    sv.data[first(r)]
+end
+
+function Base.get(sv::SortedVector, n::AbstractString, default)
+    r = searchsorted(sv.data, n, order=NameOrdering())
+    !isempty(r) || return default
+    sv.data[first(r)]
+end
+
+function Base.in(sv::SortedVector, n::AbstractString)
+    !isempty(searchsorted(sv.data, n, order=NameOrdering()))
+end
+
+function Base.push!(sv::SortedVector{T}, x::T) where {T}
+    r = searchsorted(sv.data, x, order=NameOrdering())
+    splice!(sv.data, r, Ref(x))
+    sv
+end
+
+function Base.delete!(sv::SortedVector, n::AbstractString)
+    r = searchsorted(sv.data, x, order=NameOrdering())
+    splice!(sv.data, r)
+    sv
+end
 
 # Entity containers.
 
@@ -64,18 +111,18 @@ mutable struct PGTable
     name::String
     comment::Union{String,Nothing}
 
-    columns::Dict{String,PGColumn}
+    columns::SortedVector{PGColumn}
     primary_key::Union{PGUniqueKey,Nothing}
-    unique_keys::Dict{String,PGUniqueKey}
-    foreign_keys::Dict{String,PGForeignKey}
+    unique_keys::SortedVector{PGUniqueKey}
+    foreign_keys::SortedVector{PGForeignKey}
     referring_foreign_keys::Set{PGForeignKey}
 
     PGTable(scm, name) =
         new(false, scm, name, nothing,
-            Dict{String,PGColumn}(),
+            SortedVector{PGColumn}(),
             nothing,
-            Dict{String,PGUniqueKey}(),
-            Dict{String,PGForeignKey}(),
+            SortedVector{PGUniqueKey}(),
+            SortedVector{PGForeignKey}(),
             Set{PGForeignKey}())
 end
 
@@ -101,22 +148,22 @@ mutable struct PGSchema
     name::String
     comment::Union{String,Nothing}
 
-    types::Dict{String,PGType}
-    tables::Dict{String,PGTable}
+    types::SortedVector{PGType}
+    tables::SortedVector{PGTable}
 
     PGSchema(cat, name) =
         new(false, cat, name, nothing,
-            Dict{String,PGType}(),
-            Dict{String,PGTable}())
+            SortedVector{PGType}(),
+            SortedVector{PGTable}())
 end
 
 mutable struct PGCatalog
     name::String
 
-    schemas::Dict{String,PGSchema}
+    schemas::SortedVector{PGSchema}
 
     PGCatalog(name) =
-        new(name, Dict{String,PGSchema}())
+        new(name, SortedVector{PGSchema}())
 end
 
 end
@@ -136,7 +183,7 @@ Base.length(cat::PGCatalog) =
     length(cat.schemas)
 
 Base.iterate(cat::PGCatalog, state...) =
-    iterate(values(cat.schemas), state...)
+    iterate(cat.schemas, state...)
 
 function add_schema!(cat::PGCatalog, name::AbstractString)
     scm = PGSchema(cat, name)
@@ -144,6 +191,9 @@ function add_schema!(cat::PGCatalog, name::AbstractString)
 end
 
 # Some common operations.
+
+get_name(name::AbstractString) =
+    name
 
 get_name(ety::Union{PGSchema,PGType,PGTable,PGColumn,PGUniqueKey,PGForeignKey}) =
     ety.name
@@ -180,8 +230,8 @@ Base.iterate(scm::PGSchema, state...) =
 
 function link!(scm::PGSchema)
     @assert !scm.linked
-    @assert !(scm.name in keys(scm.catalog.schemas))
-    scm.catalog.schemas[scm.name] = scm
+    @assert !(scm.name in scm.catalog.schemas)
+    push!(scm.catalog.schemas, scm)
     scm.linked = true
     scm
 end
@@ -195,8 +245,8 @@ end
 
 function remove!(scm::PGSchema)
     @assert scm.linked
-    foreach(remove!, collect(values(scm.tables)))
-    foreach(remove!, collect(values(scm.types)))
+    foreach(remove!, scm.tables)
+    foreach(remove!, scm.types)
     unlink!(scm)
     scm.catalog
 end
@@ -223,8 +273,8 @@ Base.show(io::IO, typ::PGType) =
 
 function link!(typ::PGType)
     @assert !typ.linked
-    @assert !(typ.name in keys(typ.schema.types))
-    typ.schema.types[typ.name] = typ
+    @assert !(typ.name in typ.schema.types)
+    push!(typ.schema.types, typ)
     typ.linked = true
     typ
 end
@@ -238,7 +288,7 @@ end
 
 function remove!(typ::PGType)
     @assert typ.linked
-    foreach(remove!, collect(typ.columns))
+    foreach(remove!, typ.columns)
     unlink!(typ)
     typ.schema
 end
@@ -261,12 +311,12 @@ Base.length(tbl::PGTable) =
     length(tbl.columns)
 
 Base.iterate(tbl::PGTable, state...) =
-    iterate(values(tbl.columns), state...)
+    iterate(tbl.columns, state...)
 
 function link!(tbl::PGTable)
     @assert !tbl.linked
-    @assert !(tbl.name in keys(tbl.schema.tables))
-    tbl.schema.tables[tbl.name] = tbl
+    @assert !(tbl.name in tbl.schema.tables)
+    push!(tbl.schema.tables, tbl)
     tbl.linked = true
     tbl
 end
@@ -280,10 +330,10 @@ end
 
 function remove!(tbl::PGTable)
     @assert tbl.linked
-    foreach(remove!, collect(tbl.referring_foreign_keys))
-    foreach(remove!, collect(values(tbl.foreign_keys)))
-    foreach(remove!, collect(values(tbl.unique_keys)))
-    foreach(remove!, collect(values(tbl.columns)))
+    foreach(remove!, tbl.referring_foreign_keys)
+    foreach(remove!, tbl.foreign_keys)
+    foreach(remove!, tbl.unique_keys)
+    foreach(remove!, tbl.columns)
     unlink!(tbl)
     tbl.schema
 end
@@ -335,8 +385,8 @@ Base.show(io::IO, col::PGColumn) =
 
 function link!(col::PGColumn)
     @assert !col.linked
-    @assert !(col.name in keys(col.table.columns))
-    col.table.columns[col.name] = col
+    @assert !(col.name in col.table.columns)
+    push!(col.table.columns, col)
     push!(col.type_.columns, col)
     col.linked = true
     col
@@ -352,9 +402,9 @@ end
 
 function remove!(col::PGColumn)
     @assert col.linked
-    foreach(remove!, collect(col.referring_foreign_keys))
-    foreach(remove!, collect(col.foreign_keys))
-    foreach(remove!, collect(col.unique_keys))
+    foreach(remove!, col.referring_foreign_keys)
+    foreach(remove!, col.foreign_keys)
+    foreach(remove!, col.unique_keys)
     unlink!(col)
     col.table
 end
@@ -390,8 +440,8 @@ Base.show(io::IO, uk::PGUniqueKey) =
 
 function link!(uk::PGUniqueKey)
     @assert !uk.linked
-    @assert !(uk.name in keys(uk.table.unique_keys))
-    uk.table.unique_keys[uk.name] = uk
+    @assert !(uk.name in uk.table.unique_keys)
+    push!(uk.table.unique_keys, uk)
     if uk.primary
         @assert uk.table.primary_key === nothing
         uk.table.primary_key = uk
@@ -432,8 +482,8 @@ Base.show(io::IO, fk::PGForeignKey) =
 
 function link!(fk::PGForeignKey)
     @assert !fk.linked
-    @assert !(fk.name in keys(fk.table.foreign_keys))
-    fk.table.foreign_keys[fk.name] = fk
+    @assert !(fk.name in fk.table.foreign_keys)
+    push!(fk.table.foreign_keys, fk)
     for col in fk.columns
         push!(col.foreign_keys, fk)
     end
