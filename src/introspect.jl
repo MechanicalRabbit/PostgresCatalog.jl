@@ -13,7 +13,9 @@ function introspect(conn)
     res = execute(conn, """
         SELECT current_database()
     """)
-    cat = PGCatalog(res[1,1])
+    # current_database = res[1,1]
+    current_database = first(res).current_database
+    cat = PGCatalog(current_database)
 
     # Extract schemas.
     oid2schema = Dict{UInt32,PGSchema}()
