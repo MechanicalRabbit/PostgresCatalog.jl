@@ -1,11 +1,12 @@
 #
-# Introspecting the database structure.
+# Introspecting the database.
 #
 
 """
-    introspect(conn) :: PGCatalog
+    introspect(conn::LibPQ.Connection) :: PGCatalog
 
-Introspects the structure of a Postgres database.
+Introspects a Postgres database and generates a model of the database
+structure.
 """
 function introspect(conn)
     # Create the catalog object.

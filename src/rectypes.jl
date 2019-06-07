@@ -6,12 +6,18 @@ macro rectypes(blk)
     if Meta.isexpr(blk, :block)
         names = Symbol[]
         for def in blk.args
+            if Meta.isexpr(def, :macrocall) && length(def.args) > 1 && def.args[1] == GlobalRef(Core, Symbol("@doc"))
+                def = def.args[end]
+            end
             if Meta.isexpr(def, :struct, 3) && def.args[2] isa Symbol
                 push!(names, def.args[2])
             end
         end
         name2deps = Dict{Symbol,Vector{Symbol}}()
         for def in blk.args
+            if Meta.isexpr(def, :macrocall) && length(def.args) > 1 && def.args[1] == GlobalRef(Core, Symbol("@doc"))
+                def = def.args[end]
+            end
             if Meta.isexpr(def, :struct, 3) && def.args[2] isa Symbol
                 name = def.args[2]
                 deps = name2deps[name] = Symbol[]

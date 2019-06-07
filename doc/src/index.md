@@ -3,8 +3,8 @@
 
 ## Overview
 
-`PostgresCatalog` is a Julia library for introspecting and manipulating the
-structure of a Postgres database.
+`PostgresCatalog` is a Julia library for introspecting Postgres databases and
+generating models of the database structure.
 
 
 ### Installation
@@ -17,9 +17,10 @@ julia> Pkg.add("PostgresCatalog")
 ```
 
 
-### Using `PostgresCatalog`
+### Usage Guide
 
-To demonstrate `PostgresCatalog`, we need to create a sample database schema.
+We will demonstrate how to use `PostgresCatalog` on a sample database schema containing
+a single table ``individual``.
 
     using LibPQ
 
@@ -44,15 +45,16 @@ To demonstrate `PostgresCatalog`, we need to create a sample database schema.
             );
             """)
 
-Now we can generate a *catalog* object, which contains the information about
-the database structure.
+To generate a model of the database structure, we use function [`PostgresCatalog.introspect`](@ref),
+which returns a [`PostgresCatalog.PGCatalog`](@ref) object.
 
     using PostgresCatalog
 
     cat = PostgresCatalog.introspect(conn)
     #-> DATABASE " … "
 
-In this catalog object, we can find the table `invididual` in the `public` schema.
+By traversing the catalog, we can obtain the models of database tables, which
+are represented as [`PostgresCatalog.PGTable`](@ref) objects.
 
     scm = cat["public"]
     #-> SCHEMA "public"
@@ -60,7 +62,8 @@ In this catalog object, we can find the table `invididual` in the `public` schem
     tbl = scm["individual"]
     #-> TABLE "individual"
 
-For this table, we lists its columns.
+The table model contains information about its columns in the form of
+[`PostgresCatalog.PGColumn`](@ref) objects.
 
     foreach(println, tbl)
     #=>
@@ -71,19 +74,27 @@ For this table, we lists its columns.
     COLUMN "individual"."father_id" "int4" NULL
     =#
 
-We can also access individual columns and their attributes.
+Properties of a table column are available as attributes on the corresponding
+model object.
 
     col = tbl["sex"]
+    #-> COLUMN "individual"."sex" "individual_sex_enum" NOT NULL
 
-    col.name        #-> "sex"
+    col.name
+    #-> "sex"
 
-    col.type_       #-> TYPE "individual_sex_enum"
+    col.type_
+    #-> TYPE "individual_sex_enum"
 
-    col.not_null    #-> true
+    col.not_null
+    #-> true
 
-    col.default     #-> "'unknown'::individual_sex_enum"
+    col.default
+    #-> "'unknown'::individual_sex_enum"
 
-We can find the constraints defined on this table.
+Description of unique and foreign key constraints defined on the table is also
+available in the form of [`PostgresCatalog.PGUniqueKey`](@ref) and
+[`PostgresCatalog.PGForeignKey`](@ref) objects.
 
     tbl.primary_key
     #-> CONSTRAINT "individual"."individual_pk" PRIMARY KEY ("mrn")
@@ -105,5 +116,12 @@ We can find the constraints defined on this table.
 
 ```@docs
 PostgresCatalog.introspect
+PostgresCatalog.PGCatalog
+PostgresCatalog.PGSchema
+PostgresCatalog.PGType
+PostgresCatalog.PGTable
+PostgresCatalog.PGColumn
+PostgresCatalog.PGUniqueKey
+PostgresCatalog.PGForeignKey
 ```
 

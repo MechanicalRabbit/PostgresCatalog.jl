@@ -99,6 +99,18 @@ end
 
 @rectypes begin
 
+"""
+Model of a foreign key constraint.
+
+* `table`: table that owns the key;
+* `name`: name of the constraint;
+* `columns`: columns included to the key;
+* `target_table`: table targeted by the key;
+* `target_columns`: columns targeted by the key;
+* `on_delete`: `ON DELETE` action;
+* `on_update`: `ON UPDATE` action;
+* `comment`: comment on the constraint.
+"""
 mutable struct PGForeignKey
     linked::Bool
 
@@ -115,6 +127,15 @@ mutable struct PGForeignKey
         new(false, tbl, name, cols, ttbl, tcols, on_update, on_delete, nothing)
 end
 
+"""
+Model of a unique key constraint.
+
+* `table`: table that owns the key;
+* `name`: name of the constraint;
+* `columns`: columns included to the key;
+* `primary`: set if this is the primary key;
+* `comment`: comment on the constraint.
+"""
 mutable struct PGUniqueKey
     linked::Bool
 
@@ -128,6 +149,18 @@ mutable struct PGUniqueKey
         new(false, tbl, name, cols, primary, nothing)
 end
 
+"""
+Model of a column.
+
+* `table`: table that owns the column;
+* `name`: name of the column;
+* `type_`: type of the column;
+* `not_null`: set if the column has `NOT NULL` constraint;
+* `default`: SQL expression that calculates the default column value; or ``nothing``;
+* `unique_keys`: set of unique keys that include this columns;
+* `foreign_keys`: set of foreign keys that include this column;
+* `referring_foreign_keys`: set of foreign keys that target this column.
+"""
 mutable struct PGColumn
     linked::Bool
 
@@ -149,6 +182,18 @@ mutable struct PGColumn
             Set{PGForeignKey}())
 end
 
+"""
+Model of a table.
+
+* `schema`: schema that owns the table;
+* `name`: name of the table;
+* `comment`: comment on the table;
+* `columns`: collection of table columns;
+* `primary_key`: primary key of the table, if any;
+* `unique_keys`: collection of unique keys defined on the table;
+* `foreign_keys`: collection of foreign keys defined on the table;
+* `referring_foreign_keys`: set of foreign keys that refer to this table.
+"""
 mutable struct PGTable
     linked::Bool
 
@@ -171,6 +216,15 @@ mutable struct PGTable
             Set{PGForeignKey}())
 end
 
+"""
+Model of a type.
+
+* `schema`: schema that owns the type;
+* `name`: name of the type;
+* `labels`: vector of labels for an `ENUM` type; `nothing` otherwise;
+* `comment`: comment on the type;
+* `columns`: set of columns of this type.
+"""
 mutable struct PGType
     linked::Bool
 
@@ -186,6 +240,15 @@ mutable struct PGType
             Set{PGColumn}())
 end
 
+"""
+Model of a database schema.
+
+* `catalog`: database that owns the schema;
+* `name`: name of the schema;
+* `comment`: comment on the schema;
+* `type`: collection of types owned by the schema;
+* `tables`: collection of tables owned by the schema.
+"""
 mutable struct PGSchema
     linked::Bool
 
@@ -202,6 +265,12 @@ mutable struct PGSchema
             SortedVector{PGTable}())
 end
 
+"""
+Model of a Postgres database.
+
+* `name`: name of the database;
+* `schemas`: collection of schemas owned by the database.
+"""
 mutable struct PGCatalog
     name::String
 
