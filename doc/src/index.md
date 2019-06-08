@@ -1,8 +1,5 @@
 # PostgresCatalog.jl
 
-
-## Overview
-
 PostgresCatalog is a Julia library for introspecting Postgres databases and
 generating models of the database structure.  It provides information about
 database schemas, types, tables, columns, unique and foreign key constraints.
@@ -10,7 +7,7 @@ database schemas, types, tables, columns, unique and foreign key constraints.
 Ability to modify the database structure will be added in a future release.
 
 
-### Installation
+## Installation
 
 Use the Julia package manager.
 
@@ -20,7 +17,7 @@ julia> Pkg.add("PostgresCatalog")
 ```
 
 
-### Usage Guide
+## Usage Guide
 
 To demonstrate PostgresCatalog, we create a database containing just one table.
 
