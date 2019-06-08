@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Home · PostgresCatalog.jl</title><link href="https://cdnjs.cloudflare.com/ajax/libs/normalize/4.2.0/normalize.min.css" rel="stylesheet" type="text/css"/><link href="https://fonts.googleapis.com/css?family=Lato|Roboto+Mono" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.6.3/css/font-awesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/styles/default.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.2.0/require.min.js" data-main="assets/documenter.js"></script><script src="siteinfo.js"></script><script src="../versions.js"></script><link href="assets/documenter.css" rel="stylesheet" type="text/css"/></head><body><nav class="toc"><h1>PostgresCatalog.jl</h1><select id="version-selector" onChange="window.location.href=this.value" style="visibility: hidden"></select><form class="search" id="search-form" action="search/"><input id="search-query" name="q" type="text" placeholder="Search docs"/></form><ul><li class="current"><a class="toctext" href>Home</a><ul class="internal"><li><a class="toctext" href="#Installation-1">Installation</a></li><li><a class="toctext" href="#Usage-Guide-1">Usage Guide</a></li><li><a class="toctext" href="#API-Reference-1">API Reference</a></li></ul></li></ul></nav><article id="docs"><header><nav><ul><li><a href>Home</a></li></ul><a class="edit-page" href="https://github.com/rbt-lang/PostgresCatalog.jl/blob/master/doc/src/index.md"><span class="fa"></span> Edit on GitHub</a></nav><hr/><div id="topbar"><span>Home</span><a class="fa fa-bars" href="#"></a></div></header><h1><a class="nav-anchor" id="PostgresCatalog.jl-1" href="#PostgresCatalog.jl-1">PostgresCatalog.jl</a></h1><p>PostgresCatalog is a Julia library for introspecting Postgres databases and generating models of the database structure.  It provides information about database schemas, types, tables, columns, unique and foreign key constraints.</p><p>Ability to modify the database structure will be added in a future release.</p><h2><a class="nav-anchor" id="Installation-1" href="#Installation-1">Installation</a></h2><p>Use the Julia package manager.</p><pre><code class="language-julia">julia&gt; using Pkg
+julia&gt; Pkg.add(&quot;PostgresCatalog&quot;)</code></pre><h2><a class="nav-anchor" id="Usage-Guide-1" href="#Usage-Guide-1">Usage Guide</a></h2><p>To demonstrate PostgresCatalog, we create a database containing just one table.</p><pre><code class="language-julia">using LibPQ
+
+conn = LibPQ.Connection(&quot;&quot;)
+
+execute(conn, &quot;BEGIN&quot;)
+
+execute(conn,
+        &quot;&quot;&quot;
+        CREATE TYPE patient_sex_enum AS ENUM (&#39;male&#39;, &#39;female&#39;, &#39;other&#39;, &#39;unknown&#39;);
+
+        CREATE TABLE patient (
+            id int4 NOT NULL,
+            mrn text NOT NULL,
+            sex patient_sex_enum NOT NULL DEFAULT &#39;unknown&#39;,
+            mother_id int4,
+            father_id int4,
+            CONSTRAINT patient_uk UNIQUE (id),
+            CONSTRAINT patient_pk PRIMARY KEY (mrn),
+            CONSTRAINT patient_mother_fk FOREIGN KEY (mother_id) REFERENCES patient (id),
+            CONSTRAINT patient_father_fk FOREIGN KEY (father_id) REFERENCES patient (id)
+        );
+        &quot;&quot;&quot;)</code></pre><p>Function <a href="#PostgresCatalog.introspect"><code>PostgresCatalog.introspect</code></a> generates a <a href="#PostgresCatalog.PGCatalog"><code>PostgresCatalog.PGCatalog</code></a> object containing a model of this database.</p><pre><code class="language-julia">using PostgresCatalog
+
+cat = PostgresCatalog.introspect(conn)
+#-&gt; DATABASE &quot; … &quot;</code></pre><p>By traversing the catalog, we can obtain the table model represented by a <a href="#PostgresCatalog.PGTable"><code>PostgresCatalog.PGTable</code></a> object.</p><pre><code class="language-julia">scm = cat[&quot;public&quot;]
+#-&gt; SCHEMA &quot;public&quot;
+
+tbl = scm[&quot;patient&quot;]
+#-&gt; TABLE &quot;patient&quot;</code></pre><p>The table owns column models, which are represented by <a href="#PostgresCatalog.PGColumn"><code>PostgresCatalog.PGColumn</code></a> objects.</p><pre><code class="language-julia">foreach(println, tbl)
+#=&gt;
+COLUMN &quot;patient&quot;.&quot;id&quot; &quot;int4&quot; NOT NULL
+COLUMN &quot;patient&quot;.&quot;mrn&quot; &quot;text&quot; NOT NULL
+COLUMN &quot;patient&quot;.&quot;sex&quot; &quot;patient_sex_enum&quot; NOT NULL
+COLUMN &quot;patient&quot;.&quot;mother_id&quot; &quot;int4&quot; NULL
+COLUMN &quot;patient&quot;.&quot;father_id&quot; &quot;int4&quot; NULL
+=#</code></pre><p>Column properties can be discovered through model attributes.</p><pre><code class="language-julia">col = tbl[&quot;sex&quot;]
+#-&gt; COLUMN &quot;patient&quot;.&quot;sex&quot; &quot;patient_sex_enum&quot; NOT NULL
+
+col.name
+#-&gt; &quot;sex&quot;
+
+col.type
+#-&gt; TYPE &quot;patient_sex_enum&quot;
+
+col.type.labels
+#-&gt; [&quot;male&quot;, &quot;female&quot;, &quot;other&quot;, &quot;unknown&quot;]
+
+col.not_null
+#-&gt; true
+
+col.default
+#-&gt; &quot;&#39;unknown&#39;::patient_sex_enum&quot;</code></pre><p>The table also owns the models of its unique and foreign key constraints.</p><pre><code class="language-julia">tbl.primary_key
+#-&gt; CONSTRAINT &quot;patient&quot;.&quot;patient_pk&quot; PRIMARY KEY (&quot;mrn&quot;)
+
+tbl.primary_key.name
+#-&gt; &quot;patient_pk&quot;
+
+foreach(println, tbl.primary_key.columns)
+#-&gt; COLUMN &quot;patient&quot;.&quot;mrn&quot; &quot;text&quot; NOT NULL
+
+foreach(println, tbl.unique_keys)
+#=&gt;
+CONSTRAINT &quot;patient&quot;.&quot;patient_pk&quot; PRIMARY KEY (&quot;mrn&quot;)
+CONSTRAINT &quot;patient&quot;.&quot;patient_uk&quot; UNIQUE (&quot;id&quot;)
+=#
+
+foreach(println, tbl.foreign_keys)
+#=&gt;
+CONSTRAINT &quot;patient&quot;.&quot;patient_father_fk&quot; FOREIGN KEY (&quot;father_id&quot;) REFERENCES &quot;patient&quot; (&quot;id&quot;)
+CONSTRAINT &quot;patient&quot;.&quot;patient_mother_fk&quot; FOREIGN KEY (&quot;mother_id&quot;) REFERENCES &quot;patient&quot; (&quot;id&quot;)
+=#</code></pre><h2><a class="nav-anchor" id="API-Reference-1" href="#API-Reference-1">API Reference</a></h2><section class="docstring"><div class="docstring-header"><a class="docstring-binding" id="PostgresCatalog.introspect" href="#PostgresCatalog.introspect"><code>PostgresCatalog.introspect</code></a> — <span class="docstring-category">Function</span>.</div><div><div><pre><code class="language-julia">introspect(conn::LibPQ.Connection) :: PGCatalog</code></pre><p>Introspects a Postgres database and generates a model of the database structure.</p></div></div><a class="source-link" target="_blank" href="https://github.com/rbt-lang/PostgresCatalog.jl/blob/656dd147ced8ed8a537159ae0289983c72ec9a97/src/introspect.jl#L5-L10">source</a></section><section class="docstring"><div class="docstring-header"><a class="docstring-binding" id="PostgresCatalog.PGCatalog" href="#PostgresCatalog.PGCatalog"><code>PostgresCatalog.PGCatalog</code></a> — <span class="docstring-category">Type</span>.</div><div><div><p>Model of a Postgres database.</p><ul><li><code>name</code>: name of the database;</li><li><code>schemas</code>: collection of schemas owned by the database.</li></ul></div></div><a class="source-link" target="_blank" href="https://github.com/rbt-lang/PostgresCatalog.jl/blob/656dd147ced8ed8a537159ae0289983c72ec9a97/src/entities.jl#L269-L274">source</a></section><section class="docstring"><div class="docstring-header"><a class="docstring-binding" id="PostgresCatalog.PGSchema" href="#PostgresCatalog.PGSchema"><code>PostgresCatalog.PGSchema</code></a> — <span class="docstring-category">Type</span>.</div><div><div><p>Model of a database schema.</p><ul><li><code>catalog</code>: database that owns the schema;</li><li><code>name</code>: name of the schema;</li><li><code>comment</code>: comment on the schema;</li><li><code>type</code>: collection of types owned by the schema;</li><li><code>tables</code>: collection of tables owned by the schema.</li></ul></div></div><a class="source-link" target="_blank" href="https://github.com/rbt-lang/PostgresCatalog.jl/blob/656dd147ced8ed8a537159ae0289983c72ec9a97/src/entities.jl#L244-L252">source</a></section><section class="docstring"><div class="docstring-header"><a class="docstring-binding" id="PostgresCatalog.PGType" href="#PostgresCatalog.PGType"><code>PostgresCatalog.PGType</code></a> — <span class="docstring-category">Type</span>.</div><div><div><p>Model of a type.</p><ul><li><code>schema</code>: schema that owns the type;</li><li><code>name</code>: name of the type;</li><li><code>labels</code>: vector of labels for an <code>ENUM</code> type; <code>nothing</code> otherwise;</li><li><code>comment</code>: comment on the type;</li><li><code>columns</code>: set of columns of this type.</li></ul></div></div><a class="source-link" target="_blank" href="https://github.com/rbt-lang/PostgresCatalog.jl/blob/656dd147ced8ed8a537159ae0289983c72ec9a97/src/entities.jl#L220-L228">source</a></section><section class="docstring"><div class="docstring-header"><a class="docstring-binding" id="PostgresCatalog.PGTable" href="#PostgresCatalog.PGTable"><code>PostgresCatalog.PGTable</code></a> — <span class="docstring-category">Type</span>.</div><div><div><p>Model of a table.</p><ul><li><code>schema</code>: schema that owns the table;</li><li><code>name</code>: name of the table;</li><li><code>comment</code>: comment on the table;</li><li><code>columns</code>: collection of table columns;</li><li><code>primary_key</code>: primary key of the table, if any;</li><li><code>unique_keys</code>: collection of unique keys defined on the table;</li><li><code>foreign_keys</code>: collection of foreign keys defined on the table;</li><li><code>referring_foreign_keys</code>: set of foreign keys that refer to this table.</li></ul></div></div><a class="source-link" target="_blank" href="https://github.com/rbt-lang/PostgresCatalog.jl/blob/656dd147ced8ed8a537159ae0289983c72ec9a97/src/entities.jl#L186-L197">source</a></section><section class="docstring"><div class="docstring-header"><a class="docstring-binding" id="PostgresCatalog.PGColumn" href="#PostgresCatalog.PGColumn"><code>PostgresCatalog.PGColumn</code></a> — <span class="docstring-category">Type</span>.</div><div><div><p>Model of a column.</p><ul><li><code>table</code>: table that owns the column;</li><li><code>name</code>: name of the column;</li><li><code>type</code>: type of the column;</li><li><code>not_null</code>: set if the column has <code>NOT NULL</code> constraint;</li><li><code>default</code>: SQL expression that calculates the default column value; or <code>nothing</code>;</li><li><code>comment</code>: comment on the column.</li><li><code>unique_keys</code>: set of unique keys that include this column;</li><li><code>foreign_keys</code>: set of foreign keys that include this column;</li><li><code>referring_foreign_keys</code>: set of foreign keys that target this column.</li></ul></div></div><a class="source-link" target="_blank" href="https://github.com/rbt-lang/PostgresCatalog.jl/blob/656dd147ced8ed8a537159ae0289983c72ec9a97/src/entities.jl#L152-L164">source</a></section><section class="docstring"><div class="docstring-header"><a class="docstring-binding" id="PostgresCatalog.PGUniqueKey" href="#PostgresCatalog.PGUniqueKey"><code>PostgresCatalog.PGUniqueKey</code></a> — <span class="docstring-category">Type</span>.</div><div><div><p>Model of a unique key constraint.</p><ul><li><code>table</code>: table that owns the key;</li><li><code>name</code>: name of the constraint;</li><li><code>columns</code>: columns included in the key;</li><li><code>primary</code>: set if this is the primary key;</li><li><code>comment</code>: comment on the constraint.</li></ul></div></div><a class="source-link" target="_blank" href="https://github.com/rbt-lang/PostgresCatalog.jl/blob/656dd147ced8ed8a537159ae0289983c72ec9a97/src/entities.jl#L130-L138">source</a></section><section class="docstring"><div class="docstring-header"><a class="docstring-binding" id="PostgresCatalog.PGForeignKey" href="#PostgresCatalog.PGForeignKey"><code>PostgresCatalog.PGForeignKey</code></a> — <span class="docstring-category">Type</span>.</div><div><div><p>Model of a foreign key constraint.</p><ul><li><code>table</code>: table that owns the key;</li><li><code>name</code>: name of the constraint;</li><li><code>columns</code>: columns included in the key;</li><li><code>target_table</code>: table targeted by the key;</li><li><code>target_columns</code>: columns targeted by the key;</li><li><code>on_delete</code>: <code>ON DELETE</code> action;</li><li><code>on_update</code>: <code>ON UPDATE</code> action;</li><li><code>comment</code>: comment on the constraint.</li></ul></div></div><a class="source-link" target="_blank" href="https://github.com/rbt-lang/PostgresCatalog.jl/blob/656dd147ced8ed8a537159ae0289983c72ec9a97/src/entities.jl#L102-L113">source</a></section><footer><hr/></footer></article></body></html>
