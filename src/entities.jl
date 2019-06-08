@@ -34,7 +34,7 @@ function Base.get(sv::SortedVector, n::AbstractString, default)
     sv.idx[first(r)]
 end
 
-function Base.in(sv::SortedVector, n::AbstractString)
+function Base.in(n::AbstractString, sv::SortedVector)
     !isempty(searchsorted(sv.idx, n, order=NameOrdering()))
 end
 
@@ -76,7 +76,7 @@ function Base.get(iv::IndexedVector, n::AbstractString, default)
     iv.idx[first(r)]
 end
 
-function Base.in(iv::IndexedVector, n::AbstractString)
+function Base.in(n::AbstractString, iv::IndexedVector)
     !isempty(searchsorted(iv.idx, n, order=NameOrdering()))
 end
 
@@ -293,6 +293,9 @@ Base.getindex(cat::PGCatalog, name::AbstractString) =
 Base.get(cat::PGCatalog, name::AbstractString, default) =
     get(cat.schemas, name, default)
 
+Base.in(name::AbstractString, cat::PGCatalog) =
+    name in cat.schemas
+
 Base.length(cat::PGCatalog) =
     length(cat.schemas)
 
@@ -335,6 +338,9 @@ Base.getindex(scm::PGSchema, name::AbstractString) =
 
 Base.get(scm::PGSchema, name::AbstractString, default) =
     get(scm.tables, name, default)
+
+Base.in(name::AbstractString, scm::PGSchema) =
+    name in scm.tables
 
 Base.length(scm::PGSchema) =
     length(scm.tables)
@@ -420,6 +426,9 @@ Base.getindex(tbl::PGTable, name::AbstractString) =
 
 Base.get(tbl::PGTable, name::AbstractString, default) =
     get(tbl.columns, name, default)
+
+Base.in(name::AbstractString, tbl::PGTable) =
+    name in tbl.columns
 
 Base.length(tbl::PGTable) =
     length(tbl.columns)
