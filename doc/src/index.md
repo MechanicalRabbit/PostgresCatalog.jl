@@ -4,7 +4,10 @@
 ## Overview
 
 PostgresCatalog is a Julia library for introspecting Postgres databases and
-generating models of the database structure.
+generating models of the database structure.  It provides information about
+database schemas, types, tables, columns, unique and foreign key constraints.
+
+Ability to modify the database structure will be added in a future release.
 
 
 ### Installation
@@ -19,8 +22,8 @@ julia> Pkg.add("PostgresCatalog")
 
 ### Usage Guide
 
-We will demonstrate how to use `PostgresCatalog` on a sample database schema
-containing just one table.
+To demonstrate PostgresCatalog, we create a database schema containing just one
+table.
 
     using LibPQ
 
@@ -45,17 +48,17 @@ containing just one table.
             );
             """)
 
-To generate a model of the database structure, we use function
-[`PostgresCatalog.introspect`](@ref), which returns a
-[`PostgresCatalog.PGCatalog`](@ref) object.
+Function [`PostgresCatalog.introspect`](@ref) generates a
+[`PostgresCatalog.PGCatalog`](@ref) object containing a model of the whole
+database.
 
     using PostgresCatalog
 
     cat = PostgresCatalog.introspect(conn)
     #-> DATABASE " … "
 
-By traversing the catalog, we can obtain the models of database tables, which
-are represented as [`PostgresCatalog.PGTable`](@ref) objects.
+By traversing the catalog, we can obtain table models represented by
+[`PostgresCatalog.PGTable`](@ref) objects.
 
     scm = cat["public"]
     #-> SCHEMA "public"
@@ -63,7 +66,7 @@ are represented as [`PostgresCatalog.PGTable`](@ref) objects.
     tbl = scm["patient"]
     #-> TABLE "patient"
 
-The table model contains information about its columns in the form of
+The table owns column models, which are represented by
 [`PostgresCatalog.PGColumn`](@ref) objects.
 
     foreach(println, tbl)
@@ -75,8 +78,7 @@ The table model contains information about its columns in the form of
     COLUMN "patient"."father_id" "int4" NULL
     =#
 
-Properties of a table column are available as attributes on the corresponding
-model object.
+Column properties can be discovered through model attributes.
 
     col = tbl["sex"]
     #-> COLUMN "patient"."sex" "patient_sex_enum" NOT NULL
@@ -93,12 +95,16 @@ model object.
     col.default
     #-> "'unknown'::patient_sex_enum"
 
-Description of unique and foreign key constraints defined on the table is also
-available in the form of [`PostgresCatalog.PGUniqueKey`](@ref) and
-[`PostgresCatalog.PGForeignKey`](@ref) objects.
+The table also owns the models of its unique and foreign key constraints.
 
     tbl.primary_key
     #-> CONSTRAINT "patient"."patient_pk" PRIMARY KEY ("mrn")
+
+    tbl.primary_key.name
+    #-> "patient_pk"
+
+    foreach(println, tbl.primary_key.columns)
+    #-> COLUMN "patient"."mrn" "text" NOT NULL
 
     foreach(println, tbl.unique_keys)
     #=>

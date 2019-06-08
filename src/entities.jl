@@ -156,7 +156,8 @@ Model of a column.
 * `name`: name of the column;
 * `type_`: type of the column;
 * `not_null`: set if the column has `NOT NULL` constraint;
-* `default`: SQL expression that calculates the default column value; or ``nothing``;
+* `default`: SQL expression that calculates the default column value; or `nothing`;
+* `comment`: comment on the column.
 * `unique_keys`: set of unique keys that include this columns;
 * `foreign_keys`: set of foreign keys that include this column;
 * `referring_foreign_keys`: set of foreign keys that target this column.
