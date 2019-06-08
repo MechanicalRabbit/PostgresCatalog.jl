@@ -86,7 +86,7 @@ Column properties can be discovered through model attributes.
     col.name
     #-> "sex"
 
-    col.type_
+    col.type
     #-> TYPE "patient_sex_enum"
 
     col.not_null

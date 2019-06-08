@@ -154,7 +154,7 @@ Model of a column.
 
 * `table`: table that owns the column;
 * `name`: name of the column;
-* `type_`: type of the column;
+* `type`: type of the column;
 * `not_null`: set if the column has `NOT NULL` constraint;
 * `default`: SQL expression that calculates the default column value; or `nothing`;
 * `comment`: comment on the column.
@@ -167,7 +167,7 @@ mutable struct PGColumn
 
     table::PGTable
     name::String
-    type_::PGType
+    type::PGType
     not_null::Bool
     default::Union{String,Nothing}
     comment::Union{String,Nothing}
@@ -505,20 +505,20 @@ end
 # Column operations.
 
 Base.show(io::IO, col::PGColumn) =
-    print(io, "$(!col.linked ? "DROPPED " : "")COLUMN $(sql_name(get_fullname(col))) $(sql_name(get_fullname(col.type_))) $(col.not_null ? "NOT " : "")NULL")
+    print(io, "$(!col.linked ? "DROPPED " : "")COLUMN $(sql_name(get_fullname(col))) $(sql_name(get_fullname(col.type))) $(col.not_null ? "NOT " : "")NULL")
 
 function link!(col::PGColumn)
     @assert !col.linked
     @assert !(col.name in col.table.columns)
     push!(col.table.columns, col)
-    push!(col.type_.columns, col)
+    push!(col.type.columns, col)
     col.linked = true
     col
 end
 
 function unlink!(col::PGColumn)
     @assert col.linked
-    delete!(col.type_.columns, col)
+    delete!(col.type.columns, col)
     delete!(col.table.columns, col.name)
     col.linked = false
     col
@@ -541,7 +541,7 @@ function set_type!(col::PGColumn, typ::PGType)
     @assert typ.linked
     @assert col.schema.catalog === typ.schema.catalog
     unlink!(col)
-    col.type_ = typ
+    col.type = typ
     link!(col)
 end
 
