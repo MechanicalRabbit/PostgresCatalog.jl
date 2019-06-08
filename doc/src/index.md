@@ -22,8 +22,7 @@ julia> Pkg.add("PostgresCatalog")
 
 ### Usage Guide
 
-To demonstrate PostgresCatalog, we create a database schema containing just one
-table.
+To demonstrate PostgresCatalog, we create a database containing just one table.
 
     using LibPQ
 
@@ -49,16 +48,15 @@ table.
             """)
 
 Function [`PostgresCatalog.introspect`](@ref) generates a
-[`PostgresCatalog.PGCatalog`](@ref) object containing a model of the whole
-database.
+[`PostgresCatalog.PGCatalog`](@ref) object containing a model of this database.
 
     using PostgresCatalog
 
     cat = PostgresCatalog.introspect(conn)
     #-> DATABASE " … "
 
-By traversing the catalog, we can obtain table models represented by
-[`PostgresCatalog.PGTable`](@ref) objects.
+By traversing the catalog, we can obtain the table model represented by a
+[`PostgresCatalog.PGTable`](@ref) object.
 
     scm = cat["public"]
     #-> SCHEMA "public"
@@ -88,6 +86,9 @@ Column properties can be discovered through model attributes.
 
     col.type
     #-> TYPE "patient_sex_enum"
+
+    col.type.labels
+    #-> ["male", "female", "other", "unknown"]
 
     col.not_null
     #-> true

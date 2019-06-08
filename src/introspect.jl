@@ -51,7 +51,7 @@ function introspect(conn)
     foreach(columntable(res)...) do oid, typnamespace, typname, typtype
         scm = oid2schema[typnamespace]
         typ =
-            if typtype == "e"
+            if typtype == 'e'
                 add_type!(scm, typname, oid2labels[oid])
             else
                 add_type!(scm, typname)

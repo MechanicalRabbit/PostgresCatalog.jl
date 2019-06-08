@@ -104,7 +104,7 @@ Model of a foreign key constraint.
 
 * `table`: table that owns the key;
 * `name`: name of the constraint;
-* `columns`: columns included to the key;
+* `columns`: columns included in the key;
 * `target_table`: table targeted by the key;
 * `target_columns`: columns targeted by the key;
 * `on_delete`: `ON DELETE` action;
@@ -132,7 +132,7 @@ Model of a unique key constraint.
 
 * `table`: table that owns the key;
 * `name`: name of the constraint;
-* `columns`: columns included to the key;
+* `columns`: columns included in the key;
 * `primary`: set if this is the primary key;
 * `comment`: comment on the constraint.
 """
@@ -158,7 +158,7 @@ Model of a column.
 * `not_null`: set if the column has `NOT NULL` constraint;
 * `default`: SQL expression that calculates the default column value; or `nothing`;
 * `comment`: comment on the column.
-* `unique_keys`: set of unique keys that include this columns;
+* `unique_keys`: set of unique keys that include this column;
 * `foreign_keys`: set of foreign keys that include this column;
 * `referring_foreign_keys`: set of foreign keys that target this column.
 """
