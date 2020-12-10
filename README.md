@@ -3,7 +3,7 @@
 *PostgresCatalog is a Julia library for introspecting Postgres databases and
 generating models of the database structure.*
 
-[![Build Status][travis-img]][travis-url]
+[![Build Status][ci-img]][ci-url]
 [![Code Coverage][codecov-img]][codecov-url]
 [![Open Issues][issues-img]][issues-url]
 [![Documentation][doc-dev-img]][doc-dev-url]
@@ -19,8 +19,8 @@ Copyright (c) 2019: Prometheus Research, LLC.
 The PostgresCatalog package is licensed under the [MIT License][license-url].
 
 
-[travis-img]: https://travis-ci.org/rbt-lang/PostgresCatalog.jl.svg?branch=master
-[travis-url]: https://travis-ci.org/rbt-lang/PostgresCatalog.jl
+[ci-img]: https://github.com/rbt-lang/PostgresCatalog.jl/workflows/CI/badge.svg
+[ci-url]: https://github.com/rbt-lang/PostgresCatalog.jl/actions?query=workflow%3ACI+branch%3Amaster
 [codecov-img]: https://codecov.io/gh/rbt-lang/PostgresCatalog.jl/branch/master/graph/badge.svg
 [codecov-url]: https://codecov.io/gh/rbt-lang/PostgresCatalog.jl
 [issues-img]: https://img.shields.io/github/issues/rbt-lang/PostgresCatalog.jl.svg
