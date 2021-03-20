@@ -19,13 +19,13 @@ Copyright (c) 2019: Prometheus Research, LLC.
 The PostgresCatalog package is licensed under the [MIT License][license-url].
 
 
-[ci-img]: https://github.com/rbt-lang/PostgresCatalog.jl/workflows/CI/badge.svg
-[ci-url]: https://github.com/rbt-lang/PostgresCatalog.jl/actions?query=workflow%3ACI+branch%3Amaster
-[codecov-img]: https://codecov.io/gh/rbt-lang/PostgresCatalog.jl/branch/master/graph/badge.svg
-[codecov-url]: https://codecov.io/gh/rbt-lang/PostgresCatalog.jl
-[issues-img]: https://img.shields.io/github/issues/rbt-lang/PostgresCatalog.jl.svg
-[issues-url]: https://github.com/rbt-lang/PostgresCatalog.jl/issues
+[ci-img]: https://github.com/MechanicalRabbit/PostgresCatalog.jl/workflows/CI/badge.svg
+[ci-url]: https://github.com/MechanicalRabbit/PostgresCatalog.jl/actions?query=workflow%3ACI+branch%3Amaster
+[codecov-img]: https://codecov.io/gh/MechanicalRabbit/PostgresCatalog.jl/branch/master/graph/badge.svg
+[codecov-url]: https://codecov.io/gh/MechanicalRabbit/PostgresCatalog.jl
+[issues-img]: https://img.shields.io/github/issues/MechanicalRabbit/PostgresCatalog.jl.svg
+[issues-url]: https://github.com/MechanicalRabbit/PostgresCatalog.jl/issues
 [doc-dev-img]: https://img.shields.io/badge/doc-dev-blue.svg
-[doc-dev-url]: https://rbt-lang.github.io/PostgresCatalog.jl/dev/
+[doc-dev-url]: https://mechanicalrabbit.github.io/PostgresCatalog.jl/dev/
 [license-img]: https://img.shields.io/badge/license-MIT-blue.svg
-[license-url]: https://raw.githubusercontent.com/rbt-lang/PostgresCatalog.jl/master/LICENSE.md
+[license-url]: https://raw.githubusercontent.com/MechanicalRabbit/PostgresCatalog.jl/master/LICENSE.md

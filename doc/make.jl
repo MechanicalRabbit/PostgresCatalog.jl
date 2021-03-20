@@ -21,5 +21,5 @@ makedocs(
     modules = [PostgresCatalog])
 
 deploydocs(
-    repo = "github.com/rbt-lang/PostgresCatalog.jl.git",
+    repo = "github.com/MechanicalRabbit/PostgresCatalog.jl.git",
 )
